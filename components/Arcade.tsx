@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { games } from "@/lib/arcade.mjs";
 import BuilderStrip from "./BuilderStrip";
 import VoteReminder from "./VoteReminder";
+import LiveBoard from "./LiveBoard";
 export function GameSymbol({ type }: { type: string }) {
   return (
     <svg
@@ -80,11 +81,11 @@ export default function Arcade() {
       </div>
       <Link href="/run" className="runner-feature">
         <span>
-          <small>NEW · ENDLESS RUNNER</small>
+          <small>New · E-9 campus runner</small>
           <strong>Campus Dash ↗</strong>
           <span>
-            Switch lanes. Collect code tokens. Jump barriers. How far can you
-            go?
+            Collect votes, jump quiz hurdles and dodge deadlines from the E-9
+            gate to the Margallas. How far can you go?
           </span>
         </span>
         <b>Play now →</b>
@@ -121,6 +122,9 @@ export default function Arcade() {
             </div>
           </article>
         ))}
+      </div>
+      <div className="arcade-live">
+        <LiveBoard tabs limit={5} title="Live leaderboards" />
       </div>
       <div className="arcade-note">
         <b>Same campus. Fair competition.</b>

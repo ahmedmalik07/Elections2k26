@@ -9,6 +9,7 @@ const pages = [
   "/play?game=chai",
   "/play?game=memory",
   "/leaderboard?game=memory",
+  "/leaderboard?game=dash",
   "/print",
   "/admin",
   "/manifest.webmanifest",

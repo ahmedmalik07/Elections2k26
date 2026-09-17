@@ -3,7 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Avatar from "./Avatar";
 import { campaign, cards } from "@/config/campaign";
-import { games, gameInfo, gameRank, validGame } from "@/lib/arcade.mjs";
+import {
+  boards,
+  gameInfo,
+  gameRank,
+  validBoard,
+  validGame,
+} from "@/lib/arcade.mjs";
+import LiveBoard from "./LiveBoard";
 import Arcade from "./Arcade";
 import MiniGame from "./MiniGame";
 import Profile from "./Profile";
@@ -14,6 +21,7 @@ type Player = { id: string; nickname: string; department: string };
 async function api(path: string, body?: unknown, key?: string) {
   const r = await fetch("/api/" + path, {
     signal: AbortSignal.timeout(10000),
+    cache: "no-store",
     method: body ? "POST" : "GET",
     headers: {
       "Content-Type": "application/json",
@@ -139,7 +147,13 @@ export default function CampusApp({
   initialMode?: string;
 }) {
   const [mode, setMode] = useState(
-    validGame(initialMode) ? initialMode! : "classic",
+    page === "leaderboard"
+      ? validBoard(initialMode)
+        ? initialMode!
+        : "dash"
+      : validGame(initialMode)
+        ? initialMode!
+        : "classic",
   );
   const info = gameInfo(mode);
   const [starting, setStarting] = useState(page === "play"),
@@ -533,7 +547,7 @@ export default function CampusApp({
             </div>
             <div className="campus-preview">
               <div className="preview-label">
-                <span className="live-dot" /> Campus status: sleepy{" "}
+                <span className="live-pill" /> Campus status: sleepy{" "}
                 <span>Tap a cloud</span>
               </div>
               <Scene attract />
@@ -671,6 +685,12 @@ export default function CampusApp({
                     #{rank.rank} out of {rank.total} players
                   </p>
                 )}
+                <LiveBoard
+                  game={mode}
+                  limit={5}
+                  refreshKey={rank ? rank.rank : 0}
+                  title="Live top 5"
+                />
                 {unlocked.length > 0 && (
                   <div className="unlock">
                     <small>New card unlocked</small>
@@ -829,13 +849,16 @@ export default function CampusApp({
           <label className="game-filter">
             Choose a leaderboard
             <select value={mode} onChange={(e) => setMode(e.target.value)}>
-              {games.map((g) => (
+              {boards.map((g) => (
                 <option key={g.id} value={g.id}>
                   {g.name}
                 </option>
               ))}
             </select>
           </label>
+          <p className="live-status">
+            <span className="live-pill">Live</span> Refreshes every 15 seconds
+          </p>
           <p className="board-note">
             Scores compete within the same game. Department totals count
             students woken in campus rounds.

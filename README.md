@@ -1,6 +1,6 @@
 # Elections2k26 — Jaago Campus
 
-The homepage now opens directly into **Campus Dash**, an original three-lane runner: dodge purple blocks, jump orange barriers, and collect code tokens. Swipe, use arrow keys / Space, or tap the large controls. No signup is required. Runner personal bests stay on the device; its scores are not part of the shared arcade leaderboard. `/run` also opens the runner, while existing challenge links retain their original game flow. The other games remain at `/arcade`.
+The homepage now opens directly into **Campus Dash**, an original three-lane runner set on the E-9 campus (Margalla Hills, Faisal Mosque, flag bunting, black-and-yellow kerbs). The player wears Ahmed's jersey (name + roll number), runs past billboards with his photo, collects votes, jumps pink QUIZ hurdles, dodges blue DEADLINE walls and grabs chai for a one-crash shield. Milestones surface Ahmed's credentials, and a countdown shows the days left to vote. Swipe, use arrow keys / Space, or tap the large controls. No signup is needed to play; after a new best, players can pick a nickname to put it on the live Campus Dash leaderboard. `/run` also opens the runner, while existing challenge links retain their original game flow. The other games remain at `/arcade`.
 
 A mobile arcade for Ahmed Malik's independent student VP campaign, with a GDGOC/CS theme and his supplied portrait. Start with **[LAUNCH.md](LAUNCH.md)** for the step-by-step guide to Firebase, GitHub, Vercel and the custom domain.
 
@@ -35,7 +35,7 @@ Import the repository into Vercel as a Next.js application and set all six envir
 
 Edit `config/campaign.ts` for candidate details, department names, voting date, ballot number, site URL, proof visibility and manifesto cards. Blank ballot/date values are hidden. The current game is balanced around a 45-second round; changing duration requires matching server validation. The optional portrait is supported by placing `ahmed-speaking.jpg` in `public`; without it a code-drawn avatar appears.
 
-Routes: `/`, `/arcade`, `/play?game=easy|chai|memory|classic`, `/ahmed`, `/leaderboard?game=easy|chai|memory|classic`, `/print`, `/admin`. Use `/play?game=classic&debug=1` to display FPS, spawn interval and score event counts. `/print` generates a real QR code and an A4 print layout. Sound starts muted; the choice is saved on this device. `/api/health` reports whether the online configuration and Firestore connection are ready, without returning secrets. `npm run setup -- "path/to/service-account.json" "https://your-domain"` safely creates a new `.env.local` with independent generated secrets.
+Routes: `/`, `/run`, `/arcade`, `/play?game=easy|chai|memory|classic`, `/ahmed`, `/leaderboard?game=dash|easy|chai|memory|classic`, `/print`, `/admin`. Use `/play?game=classic&debug=1` to display FPS, spawn interval and score event counts. `/print` generates a real QR code and an A4 print layout. Sound starts muted; the choice is saved on this device. `/api/health` reports whether the online configuration and Firestore connection are ready, without returning secrets. `npm run setup -- "path/to/service-account.json" "https://your-domain"` safely creates a new `.env.local` with independent generated secrets.
 
 ## Local test data
 
@@ -47,7 +47,7 @@ Player ownership uses a signed HttpOnly cookie; local storage holds the display 
 
 Client-side games cannot prove honest play from an aggregate score. These checks reject malformed and implausible scores, but a determined player can forge plausible play with a valid session. A fully authoritative or replay-verified simulation is a future hardening step. Rate limiting is per browser identity, not a guarantee against identity rotation. Server records include operational timestamps and session tokens; no contact details or student roll numbers are requested.
 
-Leaderboard polling refreshes every 15 seconds. Missing Firebase displays an explicit error and does not invent rankings. Local play and card collection still work. Challenge links represent the player's best saved score. The admin key stays in sessionStorage. Clearing browser storage can lose the local collection/profile.
+Live leaderboards (Campus Dash page, arcade tabs, every result screen and `/leaderboard`) poll every 15 seconds; the API caches each board for 10 seconds per server instance to limit Firestore reads. Campus Dash tokens cost no writes, only new personal bests are submitted, and its queries use single-field indexes (no index deploy needed). Missing Firebase displays an explicit error and does not invent rankings. Local play and card collection still work. Challenge links represent the player's best saved score. The admin key stays in sessionStorage. Clearing browser storage can lose the local collection/profile.
 
 ## Verification scope
 

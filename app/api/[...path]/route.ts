@@ -7,9 +7,36 @@ import {
   validateScore,
   validatedCards,
 } from "@/lib/validation.mjs";
-import { validGame } from "@/lib/arcade.mjs";
+import { validBoard } from "@/lib/arcade.mjs";
 import { campaign } from "@/config/campaign";
 export const runtime = "nodejs";
+// Short per-instance cache so many viewers polling the live boards share Firestore reads.
+const boardCache = new Map<
+  string,
+  { at: number; rows: Record<string, unknown>[] }
+>();
+// Campus Dash queries a single field, so it needs no composite index and filters bans in memory.
+function playersBy(store: ReturnType<typeof db>, mode: string) {
+  const field = mode === "classic" ? "bestScore" : `bestScores.${mode}`;
+  const players = store.collection("players");
+  return {
+    top: (limit: number) =>
+      mode === "dash"
+        ? players.orderBy(field, "desc").limit(limit + 10)
+        : players
+            .where("banned", "==", false)
+            .orderBy(field, "desc")
+            .limit(limit),
+    above: (score: number) =>
+      mode === "dash"
+        ? players.where(field, ">", score)
+        : players.where("banned", "==", false).where(field, ">", score),
+    ranked: () =>
+      mode === "dash"
+        ? players.orderBy(field)
+        : players.where("banned", "==", false).orderBy(field),
+  };
+}
 async function handle(
   req: NextRequest,
   { params }: { params: Promise<{ path: string[] }> },
@@ -70,19 +97,51 @@ async function handle(
     if (path === "leaderboard" && req.method === "GET") {
       const dept = req.nextUrl.searchParams.get("type") === "departments";
       const mode = req.nextUrl.searchParams.get("game") || "classic";
-      if (!validGame(mode)) throw Error("Unknown game.");
-      const field = mode === "classic" ? "bestScore" : `bestScores.${mode}`;
-      const q = dept
-        ? store
-            .collection("departments")
-            .orderBy("totalWoken", "desc")
-            .limit(50)
-        : store
-            .collection("players")
-            .where("banned", "==", false)
-            .orderBy(field, "desc")
-            .limit(50);
-      const docs = await q.get();
+      if (!validBoard(mode)) throw Error("Unknown game.");
+      const limit = Math.min(
+        50,
+        Math.max(1, Number(req.nextUrl.searchParams.get("limit")) || 50),
+      );
+      const board = playersBy(store, mode);
+      const cacheKey = (dept ? "departments" : mode) + ":" + limit;
+      let cached = boardCache.get(cacheKey);
+      if (!cached || Date.now() - cached.at > 10000) {
+        const docs = await (
+          dept
+            ? store
+                .collection("departments")
+                .orderBy("totalWoken", "desc")
+                .limit(limit)
+            : board.top(limit)
+        ).get();
+        cached = {
+          at: Date.now(),
+          rows: docs.docs
+            .map((d) => ({ id: d.id, ...d.data() }) as Record<string, any>)
+            .filter((d) => dept || d.banned !== true)
+            .map((d) =>
+              dept
+                ? {
+                    id: d.id,
+                    name: d.name,
+                    totalWoken: d.totalWoken,
+                    playerCount: d.playerCount,
+                  }
+                : {
+                    id: d.id,
+                    nickname: d.nickname,
+                    department: d.department,
+                    cardsCollected: d.cardsCollected,
+                    bestScore:
+                      mode === "classic" ? d.bestScore : d.bestScores?.[mode],
+                  },
+            )
+            // Registering creates a 0 score; only people who actually played are listed.
+            .filter((d) => dept || (d as { bestScore?: number }).bestScore! > 0)
+            .slice(0, limit),
+        };
+        boardCache.set(cacheKey, cached);
+      }
       let current = null;
       if (!dept) {
         try {
@@ -95,17 +154,14 @@ async function handle(
           if (
             p.exists &&
             !p.data()!.banned &&
-            typeof personalBest === "number"
+            typeof personalBest === "number" &&
+            personalBest > 0
           ) {
-            const rank = await store
-              .collection("players")
-              .where("banned", "==", false)
-              .where(field, ">", personalBest)
-              .count()
-              .get();
+            const rank = await board.above(personalBest).count().get();
             current = {
               id,
-              ...p.data(),
+              nickname: p.data()!.nickname,
+              department: p.data()!.department,
               bestScore: personalBest,
               rank: rank.data().count + 1,
             };
@@ -113,22 +169,8 @@ async function handle(
         } catch {}
       }
       return NextResponse.json(
-        {
-          rows: docs.docs.map((d) => ({
-            id: d.id,
-            ...d.data(),
-            ...(!dept
-              ? {
-                  bestScore:
-                    mode === "classic"
-                      ? d.data().bestScore
-                      : d.data().bestScores?.[mode],
-                }
-              : {}),
-          })),
-          current,
-        },
-        { headers: { "Cache-Control": "private, max-age=15" } },
+        { rows: cached.rows, current, updatedAt: cached.at },
+        { headers: { "Cache-Control": "no-store" } },
       );
     }
     const b = req.method === "POST" ? await req.json() : {};
@@ -194,7 +236,21 @@ async function handle(
     }
     if (path === "session/start" && req.method === "POST") {
       const mode = b.mode || "classic";
-      if (!validGame(mode)) throw Error("Unknown game.");
+      if (!validBoard(mode)) throw Error("Unknown game.");
+      if (mode === "dash") {
+        // Runs restart every few seconds, so Dash tokens cost no writes and
+        // players may pick a nickname after a good run.
+        const playerId = await owner().catch(() => null);
+        return NextResponse.json({
+          token: sign({
+            kind: "round",
+            tokenId: randomUUID(),
+            playerId,
+            startedAt: Date.now(),
+            mode,
+          }),
+        });
+      }
       const playerId = await owner(),
         ref = store.doc(`players/${playerId}`),
         tokenId = randomUUID(),
@@ -220,9 +276,12 @@ async function handle(
     if (path === "score" && req.method === "POST") {
       const session = verify(b.token),
         id = await owner();
-      if (session.kind !== "round" || session.playerId !== id)
-        throw Error("Invalid session.");
       const mode = session.mode || "classic";
+      if (
+        session.kind !== "round" ||
+        (session.playerId !== id && !(mode === "dash" && !session.playerId))
+      )
+        throw Error("Invalid session.");
       validateScore(b, Date.now() - session.startedAt, mode);
       const pRef = store.doc(`players/${id}`),
         sRef = store.doc(`sessions/${session.tokenId}`);
@@ -232,18 +291,29 @@ async function handle(
           tx.get(sRef),
           tx.get(store.doc("stats/global")),
         ]);
-        if (!s.exists || s.data()!.used || !p.exists || p.data()!.banned)
+        if (
+          (mode === "dash" ? s.exists : !s.exists || s.data()!.used) ||
+          !p.exists ||
+          p.data()!.banned
+        )
           throw Error("Session used or player blocked.");
         const player = p.data()!,
           dep = store.doc(`departments/${player.department}`),
           d = await tx.get(dep);
         const hour = Math.floor(Date.now() / 3600000),
           count = player.scoreHour === hour ? player.hourCount || 0 : 0;
-        if (count >= 40)
+        if (count >= (mode === "dash" ? 90 : 40))
           throw Error("Hourly limit reached. Baad mein dobara khelo.");
         const safeCards = validatedCards(b, mode);
         const all = [...new Set([...(player.cards || []), ...safeCards])];
-        tx.update(sRef, { used: true });
+        if (mode === "dash")
+          tx.set(sRef, {
+            playerId: id,
+            startedAt: session.startedAt,
+            used: true,
+            mode,
+          });
+        else tx.update(sRef, { used: true });
         tx.update(pRef, {
           bestScore:
             mode === "classic"
@@ -253,7 +323,7 @@ async function handle(
             ...(player.bestScores || {}),
             [mode]: Math.max(player.bestScores?.[mode] || 0, b.score),
           },
-          totalWoken: player.totalWoken + b.woken,
+          totalWoken: player.totalWoken + (b.woken || 0),
           plays: player.plays + 1,
           cards: all,
           cardsCollected: all.length,
@@ -263,47 +333,41 @@ async function handle(
         });
         tx.set(dep, {
           name: player.department,
-          totalWoken: (d.data()?.totalWoken || 0) + b.woken,
+          totalWoken: (d.data()?.totalWoken || 0) + (b.woken || 0),
           playerCount: d.data()?.playerCount || 1,
         });
         tx.set(store.doc("stats/global"), {
           ...g.data(),
           totalPlays: (g.data()?.totalPlays || 0) + 1,
-          totalWoken: (g.data()?.totalWoken || 0) + b.woken,
+          totalWoken: (g.data()?.totalWoken || 0) + (b.woken || 0),
         });
         tx.set(store.collection("scores").doc(), {
           playerId: id,
           mode,
           hits: b.hits || 0,
           pairs: b.pairs || 0,
+          votes: b.votes || 0,
+          distance: b.distance || 0,
           mistakes: b.mistakes || 0,
           score: b.score,
-          woken: b.woken,
-          pops: b.pops,
-          maxCombo: b.maxCombo,
-          powerupsUsed: b.powerupsUsed,
+          woken: b.woken || 0,
+          pops: b.pops || 0,
+          maxCombo: b.maxCombo || 0,
+          powerupsUsed: b.powerupsUsed || 0,
           durationMs: b.durationMs,
-          earlyEnd: b.earlyEnd,
+          earlyEnd: b.earlyEnd ?? true,
           createdAt: Date.now(),
         });
       });
+      for (const key of boardCache.keys())
+        if (key.startsWith(mode + ":")) boardCache.delete(key);
       const p = await pRef.get();
-      const field = mode === "classic" ? "bestScore" : `bestScores.${mode}`;
+      const board = playersBy(store, mode);
       const best =
         mode === "classic" ? p.data()!.bestScore : p.data()!.bestScores[mode];
       const [rank, total] = await Promise.all([
-        store
-          .collection("players")
-          .where("banned", "==", false)
-          .where(field, ">", best)
-          .count()
-          .get(),
-        store
-          .collection("players")
-          .where("banned", "==", false)
-          .orderBy(field)
-          .count()
-          .get(),
+        board.above(best).count().get(),
+        board.ranked().count().get(),
       ]);
       return NextResponse.json({
         rank: rank.data().count + 1,
@@ -312,7 +376,7 @@ async function handle(
     }
     if (path === "challenge" && req.method === "POST") {
       const mode = b.mode || "classic";
-      if (!validGame(mode)) throw Error("Unknown game.");
+      if (!validBoard(mode)) throw Error("Unknown game.");
       const id = await owner(),
         p = await store.doc(`players/${id}`).get();
       if (!p.exists || p.data()!.banned) throw Error("Player unavailable.");

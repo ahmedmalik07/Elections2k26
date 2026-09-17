@@ -66,6 +66,7 @@ Do not change unrelated records on `wyibe.com`. Print QR posters only after the 
 ## 6. Run the public launch check
 
 - `/api/health` returns `ready: true`.
+- On your phone, set a new Campus Dash best, save a nickname, and confirm it appears on the live board beside the game.
 - On your phone, complete Chai & Code and Dev Match. Confirm scores appear on the correct game leaderboard within 15 seconds.
 - Play a second round and confirm the leaderboard keeps your best score, not two player rows.
 - Create a challenge and open it in another browser/device. Confirm the name, score and game agree with the saved best, and the Play button opens that game.
