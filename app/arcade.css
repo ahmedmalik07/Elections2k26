@@ -1,6 +1,46 @@
 .arcade-page {
   padding: 50px 0 65px;
 }
+.runner-feature {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 28px;
+  margin: 0 0 28px;
+  background: #142339;
+  color: #edf6ff;
+  border-radius: 18px;
+}
+.runner-feature > span {
+  display: grid;
+  gap: 10px;
+}
+.runner-feature small {
+  color: #a2f4d5;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+}
+.runner-feature strong {
+  font-size: 30px;
+}
+.runner-feature span span {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #c0ccdc;
+}
+.runner-feature > b {
+  white-space: nowrap;
+  color: #a2f4d5;
+  font-size: 14px;
+}
+@media (max-width: 600px) {
+  .runner-feature {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 22px;
+  }
+}
 .arcade-heading {
   max-width: 850px;
 }
@@ -370,7 +410,7 @@
 .profile-portrait .candidate-avatar img,
 .profile-portrait .candidate-avatar svg {
   border-radius: 4px;
-  object-position: center top;
+  object-position: 85% center;
 }
 .profile-portrait > span {
   font-weight: 800;
@@ -566,6 +606,7 @@
 }
 .builder-strip > img {
   object-fit: cover;
+  object-position: 85% center;
   border: 2px solid var(--ink);
   border-radius: 6px;
   flex-shrink: 0;

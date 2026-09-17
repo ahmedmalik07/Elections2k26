@@ -1,0 +1,439 @@
+.runner-page {
+  min-height: 100dvh;
+  background: #0e1626;
+  color: #f0f5ff;
+  font-family: Rubik, Arial, sans-serif;
+  padding: 0 max(22px, calc((100vw - 1180px) / 2));
+  background-image: radial-gradient(
+    ellipse at 75% 30%,
+    #203e4433,
+    transparent 60%
+  );
+}
+.runner-nav {
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #ffffff12;
+  gap: 20px;
+}
+.runner-brand {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.runner-brand > span {
+  display: grid;
+  place-items: center;
+  background: #a2f4d5;
+  color: #112d2a;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  font-size: 22px;
+}
+.runner-nav nav {
+  display: flex;
+  gap: 25px;
+  font-size: 13px;
+  color: #bbc9dc;
+}
+.runner-layout {
+  display: grid;
+  grid-template-columns: 1fr 440px;
+  gap: 80px;
+  align-items: center;
+  padding: 38px 0;
+}
+.runner-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #9af0d3;
+}
+.runner-intro h1 {
+  font-size: clamp(40px, 4.8vw, 65px);
+  line-height: 1.08;
+  letter-spacing: -3px;
+  margin: 21px 0;
+}
+.runner-intro h1 em {
+  font-style: normal;
+  color: #9af0d3;
+}
+.runner-intro > p {
+  color: #a4b3ca;
+  max-width: 340px;
+  font-size: 15px;
+}
+.runner-how {
+  margin-top: 30px;
+}
+.runner-how h2 {
+  font-size: 18px;
+  letter-spacing: -0.3px;
+  margin-bottom: 8px;
+}
+.runner-how > p {
+  color: #a4b3ca;
+  font-size: 13px;
+  max-width: 350px;
+}
+.runner-how ol {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 15px;
+}
+.runner-how li {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  color: #9aaec6;
+  font-size: 12px;
+}
+.runner-how li > b {
+  width: 46px;
+  height: 40px;
+  border: 1px solid #344057;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  color: #ffe1a1;
+  font-size: 16px;
+}
+.runner-how li strong {
+  display: block;
+  color: #e8effb;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.runner-more {
+  font-size: 12px;
+  display: inline-block;
+  margin-top: 15px;
+  color: #a2f4d5;
+}
+.runner-machine {
+  background: #192438;
+  border: 1px solid #ffffff1c;
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px #0005;
+}
+.runner-hud {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  height: 68px;
+}
+.runner-hud small {
+  display: block;
+  font-size: 8px;
+  letter-spacing: 1.4px;
+  color: #9bacbf;
+  margin-bottom: 4px;
+}
+.runner-hud strong {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.runner-hud i {
+  color: #ffe1a1;
+  font-style: normal;
+  font-size: 15px;
+}
+.runner-hud button {
+  width: 34px;
+  height: 34px;
+  background: #ffffff0c;
+  border-radius: 8px;
+  color: white;
+}
+.runner-stage {
+  position: relative;
+  height: 430px;
+  touch-action: none;
+  overflow: hidden;
+}
+.runner-stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline-offset: -4px;
+}
+.runner-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(#13213965, #0e172ada);
+  padding: 20px;
+}
+.runner-dialog {
+  text-align: center;
+  width: 100%;
+  max-width: 325px;
+}
+.runner-dialog h2 {
+  font-size: 60px;
+  font-weight: 900;
+  letter-spacing: -3px;
+  line-height: 0.98;
+  margin: 20px 0;
+  color: white;
+}
+.runner-dialog h2 em {
+  color: #a2f4d5;
+  font-style: normal;
+}
+.runner-dialog p {
+  font-size: 13px;
+  color: #d4dfef;
+  margin: 15px 0 22px;
+}
+.runner-play {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #a2f4d5;
+  color: #0d2a25;
+  border-radius: 12px;
+  width: 100%;
+  padding: 17px 20px;
+  font-weight: 800;
+  font-size: 17px;
+  box-shadow: 0 5px 0 #529d85;
+}
+.runner-play:hover {
+  background: #c0ffe7;
+}
+.runner-dialog > small {
+  display: block;
+  margin-top: 19px;
+  color: #c4d0e1;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.runner-dialog > a {
+  display: block;
+  font-size: 12px;
+  margin-top: 20px;
+  color: #a2f4d5;
+}
+.runner-final {
+  display: block;
+  font-size: 45px;
+  margin: -5px 0 20px;
+}
+.runner-final small {
+  font-size: 10px;
+  color: #9bacbf;
+}
+.runner-controls {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr 1fr;
+  gap: 8px;
+  padding: 12px 14px 5px;
+}
+.runner-controls button {
+  background: #ffffff08;
+  border: 1px solid #ffffff15;
+  border-radius: 9px;
+  min-height: 43px;
+  color: #e4ecfb;
+  font-size: 20px;
+  touch-action: manipulation;
+}
+.runner-controls button:active {
+  background: #a2f4d533;
+}
+.runner-controls button span {
+  font-size: 9px;
+  letter-spacing: 1px;
+  vertical-align: middle;
+  padding: 0 5px;
+}
+.runner-machine-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 16px 16px;
+  font-size: 9px;
+  color: #95a8c2;
+}
+.runner-machine-footer b {
+  color: #e8effb;
+  padding-left: 5px;
+}
+.runner-coach {
+  position: absolute;
+  top: 14px;
+  left: 10px;
+  right: 10px;
+  padding: 10px;
+  text-align: center;
+  background: #0e1626ce;
+  border: 1px solid #ffffff25;
+  color: #fff0c9;
+  border-radius: 10px;
+  font-size: 12px;
+  pointer-events: none;
+}
+.runner-campaign {
+  padding-bottom: 18px;
+  border-top: 1px solid #ffffff12;
+}
+.runner-candidate {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 22px 0 12px;
+}
+.runner-candidate img {
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: 85% 30%;
+}
+.runner-candidate > span {
+  display: grid;
+  gap: 5px;
+}
+.runner-candidate small {
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  color: #9bacbf;
+}
+.runner-candidate strong {
+  font-size: 14px;
+}
+.runner-candidate strong span {
+  font-size: 11px;
+  color: #a4b3ca;
+  font-weight: 400;
+}
+.runner-candidate > span > span {
+  font-size: 11px;
+  color: #a4b3ca;
+}
+.runner-candidate > b {
+  margin-left: auto;
+  font-size: 12px;
+  color: #a2f4d5;
+}
+.runner-campaign > p {
+  font-size: 9px;
+  color: #7487a3;
+  margin: 0;
+}
+@media (max-width: 850px) {
+  .runner-layout {
+    gap: 25px;
+    grid-template-columns: 1fr 390px;
+  }
+  .runner-intro h1 {
+    font-size: 43px;
+  }
+  .runner-nav {
+    height: 70px;
+  }
+}
+@media (max-width: 680px) {
+  .runner-page {
+    padding: 0 14px;
+  }
+  .runner-nav {
+    height: 58px;
+  }
+  .runner-brand {
+    font-size: 10px;
+    gap: 7px;
+  }
+  .runner-brand > span {
+    width: 29px;
+    height: 29px;
+    font-size: 19px;
+  }
+  .runner-nav nav {
+    gap: 15px;
+    font-size: 11px;
+  }
+  .runner-layout {
+    display: flex;
+    flex-direction: column;
+    padding: 15px 0 22px;
+    gap: 25px;
+  }
+  .runner-machine {
+    width: 100%;
+    max-width: 440px;
+    order: 0;
+    border-radius: 16px;
+  }
+  .runner-intro {
+    order: 1;
+    width: 100%;
+    max-width: 440px;
+  }
+  .runner-intro > .runner-eyebrow,
+  .runner-intro > h1,
+  .runner-intro > p {
+    display: none;
+  }
+  .runner-how {
+    margin-top: 0;
+  }
+  .runner-how ol {
+    gap: 12px;
+  }
+  .runner-how > p {
+    max-width: none;
+  }
+  .runner-stage {
+    height: clamp(300px, calc(100dvh - 242px), 460px);
+  }
+  .runner-hud {
+    height: 57px;
+    padding: 10px 16px;
+  }
+  .runner-dialog h2 {
+    font-size: 52px;
+    margin: 16px 0;
+  }
+  .runner-controls {
+    padding-top: 9px;
+  }
+  .runner-machine-footer {
+    padding-bottom: 12px;
+  }
+  .runner-candidate {
+    gap: 10px;
+  }
+  .runner-candidate > b {
+    display: none;
+  }
+  .runner-candidate strong {
+    font-size: 12px;
+  }
+  .runner-candidate strong span {
+    display: block;
+    margin-top: 4px;
+  }
+  .runner-candidate > span > span {
+    font-size: 10px;
+    line-height: 1.6;
+  }
+  .runner-campaign > p {
+    line-height: 1.6;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .runner-page * {
+    scroll-behavior: auto;
+  }
+}

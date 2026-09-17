@@ -1,4 +1,5 @@
 import CampusApp from "@/components/CampusApp";
+import CampusRunner from "@/components/CampusRunner";
 import { campaign } from "@/config/campaign";
 import { getChallenge } from "@/lib/server";
 export async function generateMetadata({
@@ -17,6 +18,11 @@ export async function generateMetadata({
       }
     : {};
 }
-export default function Page() {
-  return <CampusApp page="home" />;
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ c?: string }>;
+}) {
+  const { c } = await searchParams;
+  return c ? <CampusApp page="home" /> : <CampusRunner />;
 }

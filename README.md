@@ -1,5 +1,7 @@
 # Elections2k26 — Jaago Campus
 
+The homepage now opens directly into **Campus Dash**, an original three-lane runner: dodge purple blocks, jump orange barriers, and collect code tokens. Swipe, use arrow keys / Space, or tap the large controls. No signup is required. Runner personal bests stay on the device; its scores are not part of the shared arcade leaderboard. `/run` also opens the runner, while existing challenge links retain their original game flow. The other games remain at `/arcade`.
+
 A mobile arcade for Ahmed Malik's independent student VP campaign, with a GDGOC/CS theme and his supplied portrait. Start with **[LAUNCH.md](LAUNCH.md)** for the step-by-step guide to Firebase, GitHub, Vercel and the custom domain.
 
 Four choices: **Chill Campus** (easy cloud popping, no early loss), **Chai & Code** (30-second one-tap game), **Dev Match** (six pairs of HTML/CSS/JS/Git/API/CLI cards), and **Bore Buster** (the original 45-second challenge). Every game has its own server leaderboard and device best score. All campus art and game icons are code-drawn; the candidate photo is supplied by Ahmed. Playable locally without Firebase; shared scores, challenges, totals and admin require Firebase.
@@ -31,7 +33,7 @@ Import the repository into Vercel as a Next.js application and set all six envir
 
 ## Campaign edits
 
-Edit `config/campaign.ts` for candidate details, department names, voting date, ballot number, site URL, proof visibility and manifesto cards. Blank ballot/date values are hidden. The current game is balanced around a 45-second round; changing duration requires matching server validation. The optional portrait is supported by placing `ahmed.png` in `public`; without it a code-drawn avatar appears.
+Edit `config/campaign.ts` for candidate details, department names, voting date, ballot number, site URL, proof visibility and manifesto cards. Blank ballot/date values are hidden. The current game is balanced around a 45-second round; changing duration requires matching server validation. The optional portrait is supported by placing `ahmed-speaking.jpg` in `public`; without it a code-drawn avatar appears.
 
 Routes: `/`, `/arcade`, `/play?game=easy|chai|memory|classic`, `/ahmed`, `/leaderboard?game=easy|chai|memory|classic`, `/print`, `/admin`. Use `/play?game=classic&debug=1` to display FPS, spawn interval and score event counts. `/print` generates a real QR code and an A4 print layout. Sound starts muted; the choice is saved on this device. `/api/health` reports whether the online configuration and Firestore connection are ready, without returning secrets. `npm run setup -- "path/to/service-account.json" "https://your-domain"` safely creates a new `.env.local` with independent generated secrets.
 

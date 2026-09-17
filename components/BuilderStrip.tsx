@@ -3,7 +3,7 @@ export default function BuilderStrip() {
   return (
     <Link href="/ahmed" className="builder-strip">
       <img
-        src="/ahmed.png"
+        src="/ahmed-speaking.jpg"
         alt="Ahmed Malik"
         width="72"
         height="72"

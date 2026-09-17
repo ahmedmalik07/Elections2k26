@@ -9,7 +9,7 @@
 - Completed Chai & Code in the browser at 360x740: target moves after a tap, points accumulate, the round reaches its result, the device best is saved and the profile card unlocks.
 - Completed Dev Match in the browser at 360x740: six mismatches followed by six correct pairs produced 360 points, a completion result and the remaining three campaign cards. Download card reported success. Replay reset the score and board.
 - Reloaded `/ahmed` and verified the collection remained 4/4 with the cards readable.
-- Checked Ahmed's supplied photo, full name, GDGOC role and credential grid at 430x932. The actual image is served from `public/ahmed.png`.
+- Checked Ahmed's supplied photo, full name, GDGOC role and credential grid at 430x932. The actual image is served from `public/ahmed-speaking.jpg`.
 - Checked arcade navigation, game URLs, game-specific result links, and the clear local-only score message when Firebase is absent.
 - Removed horizontal overflow in the mini-game frame and constrained tall result cards to an internally scrollable modal.
 - Verified the GDGOC Vice President voting reminder and 21/22 September 2026 dates in the live game at 360x740. The full memory board and reminder fit with game content height equal to its visible height (599px), without internal scrolling.
@@ -23,3 +23,6 @@
 - Difficulty targets and Lighthouse scores have not been measured with real users/devices.
 
 The local game flows are working. Shared online features are implemented but remain a launch gate until the Firebase credentials, indexes and Vercel domain are connected and tested.
+# Campus Dash update
+
+The new homepage and `/run` provide the runner without signup. All 17 automated tests pass, including warmup safety, escape lanes, collision rules and score totals. Production build passes. Browser checks confirmed mobile layout at 390 × 844, starting, moving, jumping and pause/resume. The supplied speaking photo replaces the previous portrait. Runner bests are device-local; no shared runner leaderboard is claimed. Real-phone performance and touch feel remain a launch playtest item.

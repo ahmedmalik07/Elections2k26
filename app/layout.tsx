@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(campaign.siteUrl),
   title: "Jaago Campus | Ahmed Malik for Vice President, GDGOC",
   description:
-    "Sab ne poster lagaye. Maine game bana diya. Campus so raha hai. 45 second mein jagao.",
+    "Play Campus Dash: dodge roadblocks, collect code tokens, and beat your best. An instant-play campus arcade by Ahmed Malik.",
   manifest: "/manifest.webmanifest",
   openGraph: {
     title: "Jaago Campus",

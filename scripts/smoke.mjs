@@ -1,6 +1,7 @@
 const origin = process.env.SMOKE_URL || "http://localhost:3000";
 const pages = [
   "/",
+  "/run",
   "/arcade",
   "/ahmed",
   "/play?game=easy",
@@ -13,7 +14,7 @@ const pages = [
   "/manifest.webmanifest",
   "/icon",
   "/api/og",
-  "/ahmed.png",
+  "/ahmed-speaking.jpg",
 ];
 let failed = false;
 for (const page of pages) {

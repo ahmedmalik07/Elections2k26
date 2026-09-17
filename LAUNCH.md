@@ -4,7 +4,7 @@ The arcade, Ahmed's profile and supplied photo are ready in this project. A loca
 
 ## 1. Confirm your public details
 
-Open `config/campaign.ts`. The position is **Vice President, GDGOC Air University**, and voting is set to **21 and 22 September 2026**, in Pakistan time. Confirm the department names, LinkedIn URL and promises. Add your ballot number when confirmed; a blank number stays hidden. Your supplied portrait is `public/ahmed.png`. The profile shows the credentials you supplied: Computer Games Development, 4 national hackathon wins, a startup incubated at NIC Islamabad, 5 internships and Technical Co-Lead at GDGOC Air University. No startup name, academic year or contact details have been invented.
+Open `config/campaign.ts`. The position is **Vice President, GDGOC Air University**, and voting is set to **21 and 22 September 2026**, in Pakistan time. Confirm the department names, LinkedIn URL and promises. Add your ballot number when confirmed; a blank number stays hidden. Your supplied portrait is `public/ahmed-speaking.jpg`. The profile shows the credentials you supplied: Computer Games Development, 4 national hackathon wins, a startup incubated at NIC Islamabad, 5 internships and Technical Co-Lead at GDGOC Air University. No startup name, academic year or contact details have been invented.
 
 ## 2. Create Firebase
 

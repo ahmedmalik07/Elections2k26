@@ -64,20 +64,31 @@ export default function Arcade() {
       <div className="arcade-heading">
         <span className="section-number">Your break starts here</span>
         <h1>
-          Chhoti si break.
+          Pick a game.
           <br />
-          <span>Full campus vibe.</span>
+          <span>Start in seconds.</span>
         </h1>
         <p>
-          Code, chai, community. A little arcade from a fellow GDGOC builder.
-          Beginners welcome.
+          Run, match, or just tap. Choose your pace — each game explains the
+          controls before you start.
         </p>
         <div className="arcade-summary">
-          <span>3 games + a chill mode</span>
-          <span>30 to 90 seconds</span>
+          <span>4 games + a chill mode</span>
+          <span>Quick breaks, instant replays</span>
           <span>No downloads</span>
         </div>
       </div>
+      <Link href="/run" className="runner-feature">
+        <span>
+          <small>NEW · ENDLESS RUNNER</small>
+          <strong>Campus Dash ↗</strong>
+          <span>
+            Switch lanes. Collect code tokens. Jump barriers. How far can you
+            go?
+          </span>
+        </span>
+        <b>Play now →</b>
+      </Link>
       <BuilderStrip />
       <VoteReminder />
       <div className="arcade-grid">

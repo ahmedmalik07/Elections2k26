@@ -6,7 +6,7 @@ export default function Avatar() {
     <div className="candidate-avatar">
       {!failed ? (
         <img
-          src="/ahmed.png"
+          src="/ahmed-speaking.jpg"
           alt="Ahmed Malik"
           width="90"
           height="90"
