@@ -3,14 +3,39 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { campaign } from "@/config/campaign";
 import {
-  runnerScore,
-  runnerCollision,
-  runnerRow,
-  runnerRank,
+  achievements,
+  approachSpeed,
+  BUS_BOOST,
+  CHAIN_WINDOW,
+  COLLAB_EVERY,
+  COLLAB_POINTS,
+  collabRow,
+  DOUBLE,
+  earnedAchievements,
+  FLY,
+  JUMP,
+  MAGNET,
   milestones,
+  multiplier,
+  runnerCollision,
+  runnerRank,
+  runnerRow,
+  runnerScore,
+  runnerSpeed,
+  SLIDE,
+  spawnGap,
+  voteTrail,
+  votePoints,
   votingCountdown,
+  zoneAt,
+  zoneIndex,
+  zones,
+  ZONE_LENGTH,
 } from "@/lib/runner.mjs";
 import LiveBoard from "./LiveBoard";
+import Brand from "./Brand";
+import { createRunnerAudio } from "./runnerAudio";
+import { C, drawScene, type Item, type Phase, type Run } from "./runnerScene";
 import "./runner.css";
 
 async function post(path: string, body: unknown) {
@@ -24,92 +49,107 @@ async function post(path: string, body: unknown) {
   if (!r.ok) throw Error(data.error);
   return data;
 }
-function savedPlayer(): { nickname: string; department: string } | null {
+function readJson<T>(key: string, fallback: T): T {
   try {
-    return JSON.parse(localStorage.getItem("jaago-player") || "null");
+    return JSON.parse(localStorage.getItem(key) || "null") ?? fallback;
   } catch {
-    return null;
+    return fallback;
   }
 }
+function writeJson(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+const savedPlayer = () =>
+  readJson<{ nickname: string; department: string } | null>(
+    "jaago-player",
+    null,
+  );
 
-type Phase = "ready" | "running" | "paused" | "over";
-type Item = {
-  lane: number;
-  z: number;
-  kind: "vote" | "chai" | "quiz" | "deadline";
-  hit?: boolean;
-};
-type Spark = {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  life: number;
-  color: string;
-};
-type Run = {
-  lane: number;
-  visualLane: number;
-  jump: number;
-  distance: number;
-  votes: number;
-  time: number;
-  spawn: number;
-  items: Item[];
-  sparks: Spark[];
-  shield: boolean;
-  grace: number;
-  milestone: number;
-  phase: Phase;
-};
 const fresh = (): Run => ({
+  phase: "ready",
   lane: 0,
   visualLane: 0,
   jump: 0,
-  distance: 0,
-  votes: 0,
-  time: 0,
-  spawn: 1.6,
-  items: [],
-  sparks: [],
+  slide: 0,
+  fly: 0,
+  magnet: 0,
+  double: 0,
   shield: false,
   grace: 0,
+  shake: 0,
+  flash: 0,
+  distance: 0,
+  time: 0,
+  spawn: 1.2,
+  collabTimer: 15,
+  collabsSpawned: 0,
+  items: [],
+  sparks: [],
+  floaters: [],
+  votes: 0,
+  points: 0,
+  chain: 0,
+  chainTimer: 0,
+  maxChain: 0,
+  chai: 0,
+  flights: 0,
+  slides: 0,
+  collabs: 0,
   milestone: 0,
-  phase: "ready",
+  zone: 0,
 });
-
-// Truck-art inspired palette, shared by the canvas scene.
-const C = {
-  ink: "#1d2a5c",
-  red: "#e4312b",
-  yellow: "#ffc20e",
-  green: "#1faa59",
-  pakGreen: "#01411c",
-  blue: "#2f6bff",
-  pink: "#e6007e",
-  orange: "#ff7a1a",
-  cream: "#fff3d6",
+type Hud = {
+  distance: number;
+  votes: number;
+  points: number;
+  chain: number;
+  chainLeft: number;
+  shield: boolean;
+  fly: number;
+  magnet: number;
+  double: number;
+  zone: number;
 };
-const FLAGS = [C.red, C.yellow, C.green, C.blue, C.pink, C.orange];
-const SIGNS = [
-  "AHMED FOR VP",
-  "E-9 CAMPUS",
-  "VOTE 21-22 SEP",
-  "ROLL NO. " + campaign.rollNumber,
-  "GDGOC",
-  "CAFE →",
-];
+const emptyHud: Hud = {
+  distance: 0,
+  votes: 0,
+  points: 0,
+  chain: 0,
+  chainLeft: 0,
+  shield: false,
+  fly: 0,
+  magnet: 0,
+  double: 0,
+  zone: 0,
+};
+const CRASH_TIPS: Record<string, string> = {
+  quiz: "Pink hurdles: jump just before they reach you.",
+  bar: "Purple bars: swipe down (or ↓) to slide under them.",
+  deadline: "Blue walls are too tall to jump. Switch lanes.",
+  bus: "Watch for the red ! — an AU shuttle is coming. Change lanes early.",
+};
 
 export default function CampusRunner() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const state = useRef<Run>(fresh());
+  const audio = useRef<ReturnType<typeof createRunnerAudio>>(null);
   const [phase, setPhase] = useState<Phase>("ready");
-  const [stats, setStats] = useState({ distance: 0, votes: 0, shield: false });
+  const [hud, setHud] = useState<Hud>(emptyHud);
   const [best, setBest] = useState(0);
   const [crashTip, setCrashTip] = useState("");
-  const [toast, setToast] = useState("");
+  const [toast, setToast] = useState<{ text: string; kind: string } | null>(
+    null,
+  );
   const [countdown, setCountdown] = useState<string | null>(null);
+  const [muted, setMuted] = useState(false);
+  const [brainrot, setBrainrot] = useState(true);
+  const [unlocked, setUnlocked] = useState<string[]>([]);
+  const [newThisRun, setNewThisRun] = useState<string[]>([]);
   const bestRef = useRef(0);
+  const unlockedRef = useRef<string[]>([]);
+  const runsRef = useRef(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const touch = useRef<{ x: number; y: number } | null>(null);
   // Leaderboard: each run gets a signed token; only new personal bests are submitted.
@@ -128,30 +168,80 @@ export default function CampusRunner() {
   const [department, setDepartment] = useState(campaign.departments[0]);
   const [sheetError, setSheetError] = useState("");
   const [busy, setBusy] = useState(false);
-  const score = runnerScore(stats.distance, stats.votes);
-  const shareText = `I scored ${score.toLocaleString()} in Campus Dash, the E-9 campus runner. Beat that: ${campaign.siteUrl}/run\n\nVote ${campaign.candidateName} (Roll No. ${campaign.rollNumber}) for ${campaign.position}, ${campaign.votingLabel}.`;
+  const score = runnerScore(hud.distance, hud.points);
+  const zone = zones[hud.zone % zones.length];
+  const shareText = `I scored ${score.toLocaleString()} in Campus Dash and reached ${zone.name}. Beat that: ${campaign.siteUrl}/run\n\nVote ${campaign.candidateName} (Roll No. ${campaign.rollNumber}) for ${campaign.position}, ${campaign.votingLabel}.`;
 
   function changePhase(next: Phase) {
     state.current.phase = next;
     setPhase(next);
+    if (next === "running")
+      audio.current?.startMusic(() => runnerSpeed(state.current.time));
+    else audio.current?.stopMusic();
   }
-  function showToast(text: string) {
-    setToast(text);
+  function showToast(text: string, kind = "info", ms = 2400) {
+    setToast({ text, kind });
     clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(""), 2400);
+    toastTimer.current = setTimeout(() => setToast(null), ms);
   }
   function start() {
     state.current = fresh();
-    setStats({ distance: 0, votes: 0, shield: false });
-    setToast("");
+    // Development only: /run?zone=3 starts at that campus with no crashes, for playtesting.
+    if (process.env.NODE_ENV !== "production") {
+      const params = new URLSearchParams(location.search);
+      const z = Number(params.get("zone"));
+      if (params.has("zone") && Number.isInteger(z) && z >= 0) {
+        state.current.distance = z * ZONE_LENGTH + 1;
+        state.current.zone = z;
+        state.current.time = 60;
+        state.current.grace = 9999;
+      }
+    }
+    setHud(emptyHud);
+    setToast(null);
     setClaim("idle");
     setRank(null);
+    setNewThisRun([]);
     pending.current = null;
+    audio.current?.unlock();
     token.current = post("session/start", { mode: "dash" })
       .then((d) => d.token as string)
       .catch(() => null);
     changePhase("running");
     canvas.current?.focus();
+  }
+  function move(direction: number) {
+    const s = state.current;
+    if (s.phase === "running")
+      s.lane = Math.max(-1, Math.min(1, s.lane + direction));
+  }
+  function jump() {
+    const s = state.current;
+    if (s.phase !== "running" || s.jump > 0 || s.fly > 0) return;
+    s.jump = JUMP;
+    s.slide = 0;
+    audio.current?.jump();
+  }
+  function slide() {
+    const s = state.current;
+    if (s.phase !== "running" || s.fly > 0) return;
+    s.slide = SLIDE;
+    s.jump = 0;
+    audio.current?.slide();
+  }
+  function toggleMute() {
+    const next = !muted;
+    setMuted(next);
+    if (audio.current) audio.current.muted = next;
+    writeJson("campus-dash-muted", next);
+    if (!next && state.current.phase === "running")
+      audio.current?.startMusic(() => runnerSpeed(state.current.time));
+  }
+  function toggleBrainrot() {
+    const next = !brainrot;
+    setBrainrot(next);
+    if (audio.current) audio.current.brainrot = next;
+    writeJson("campus-dash-brainrot", next);
   }
   async function submit(retried = false): Promise<void> {
     const body = pending.current;
@@ -161,12 +251,7 @@ export default function CampusRunner() {
       const saved = await post("score", body);
       pending.current = null;
       boardBest.current = Math.max(boardBest.current, Number(body.score));
-      try {
-        localStorage.setItem(
-          "campus-dash-board-best",
-          String(boardBest.current),
-        );
-      } catch {}
+      writeJson("campus-dash-board-best", boardBest.current);
       setRank(saved);
       setClaim("saved");
       setBoardKey((k) => k + 1);
@@ -182,21 +267,18 @@ export default function CampusRunner() {
       setClaim("failed");
     }
   }
-  async function endRun(
-    final: number,
-    votes: number,
-    distance: number,
-    seconds: number,
-  ) {
+  async function endRun(s: Run, final: number) {
     const runToken = await token.current;
     if (!runToken || final <= 0) return;
     pending.current = {
       token: runToken,
       mode: "dash",
       score: final,
-      votes,
-      distance: Math.floor(distance),
-      durationMs: Math.round(seconds * 1000),
+      votes: s.votes,
+      points: s.points,
+      collabs: s.collabs,
+      distance: Math.floor(s.distance),
+      durationMs: Math.round(s.time * 1000),
     };
     if (savedPlayer()) await submit();
     else setClaim("ask");
@@ -211,9 +293,7 @@ export default function CampusRunner() {
         nickname: validNickname(nickname),
         department,
       });
-      try {
-        localStorage.setItem("jaago-player", JSON.stringify(player));
-      } catch {}
+      writeJson("jaago-player", player);
       setSheet(false);
       await submit();
     } catch (err) {
@@ -222,52 +302,48 @@ export default function CampusRunner() {
       setBusy(false);
     }
   }
-  function move(direction: number) {
-    const s = state.current;
-    if (s.phase === "running")
-      s.lane = Math.max(-1, Math.min(1, s.lane + direction));
-  }
-  function jump() {
-    const s = state.current;
-    if (s.phase === "running" && s.jump <= 0) s.jump = 0.85;
-  }
 
   useEffect(() => {
+    audio.current = createRunnerAudio();
+    const quiet = readJson("campus-dash-muted", false);
+    audio.current.muted = quiet;
+    setMuted(quiet);
+    const rot = readJson("campus-dash-brainrot", true);
+    audio.current.brainrot = rot;
+    setBrainrot(rot);
     setCountdown(
       votingCountdown(Date.now(), campaign.votingDate, campaign.votingEndDate),
     );
-    try {
-      const saved = Number(localStorage.getItem("campus-dash-best"));
-      if (Number.isFinite(saved) && saved > 0) {
-        bestRef.current = saved;
-        setBest(saved);
-      }
-      boardBest.current =
-        Number(localStorage.getItem("campus-dash-board-best")) || 0;
-    } catch {}
+    const saved = Number(readJson("campus-dash-best", 0));
+    if (saved > 0) {
+      bestRef.current = saved;
+      setBest(saved);
+    }
+    boardBest.current = Number(readJson("campus-dash-board-best", 0)) || 0;
+    unlockedRef.current = readJson<string[]>("campus-dash-achievements", []);
+    setUnlocked(unlockedRef.current);
+    runsRef.current = Number(readJson("campus-dash-runs", 0)) || 0;
+
     const key = (e: KeyboardEvent) => {
-      if (
-        [
-          "ArrowLeft",
-          "ArrowRight",
-          "ArrowUp",
-          " ",
-          "a",
-          "d",
-          "w",
-          "Escape",
-        ].includes(e.key)
-      ) {
-        if ((e.target as HTMLElement)?.closest("a,button,input,select,form"))
-          return;
-        e.preventDefault();
-        if (e.key === "Escape") {
-          if (state.current.phase === "running") changePhase("paused");
-          else if (state.current.phase === "paused") changePhase("running");
-        } else if (e.key === "ArrowLeft" || e.key === "a") move(-1);
-        else if (e.key === "ArrowRight" || e.key === "d") move(1);
-        else if (!e.repeat) jump();
-      }
+      const map: Record<string, () => void> = {
+        ArrowLeft: () => move(-1),
+        a: () => move(-1),
+        ArrowRight: () => move(1),
+        d: () => move(1),
+        ArrowUp: jump,
+        w: jump,
+        " ": jump,
+        ArrowDown: slide,
+        s: slide,
+      };
+      if (!(e.key in map) && e.key !== "Escape") return;
+      if ((e.target as HTMLElement)?.closest("a,button,input,select,form"))
+        return;
+      e.preventDefault();
+      if (e.key === "Escape") {
+        if (state.current.phase === "running") changePhase("paused");
+        else if (state.current.phase === "paused") changePhase("running");
+      } else if (!e.repeat || e.key.startsWith("Arrow")) map[e.key]();
     };
     const hide = () => {
       if (document.hidden && state.current.phase === "running")
@@ -281,29 +357,11 @@ export default function CampusRunner() {
     face.src = "/ahmed-face.jpg";
     let frame = 0,
       last = 0,
-      hud = 0;
-    const box = (
-      x: number,
-      y: number,
-      w: number,
-      h: number,
-      r: number,
-      fill: string,
-    ) => {
-      ctx.fillStyle = fill;
-      ctx.beginPath();
-      ctx.roundRect(x, y, w, h, r);
-      ctx.fill();
-    };
-    const circle = (x: number, y: number, r: number, fill: string) => {
-      ctx.fillStyle = fill;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
-    };
-    const burst = (x: number, y: number, colors: string[]) => {
-      for (let i = 0; i < 14; i++) {
-        const a = (i / 14) * Math.PI * 2;
+      hudAt = 0;
+
+    const burst = (x: number, y: number, colors: string[], count = 14) => {
+      for (let i = 0; i < count; i++) {
+        const a = (i / count) * Math.PI * 2;
         state.current.sparks.push({
           x,
           y,
@@ -312,6 +370,32 @@ export default function CampusRunner() {
           life: 0.6,
           color: colors[i % colors.length],
         });
+      }
+    };
+    const checkAchievements = (s: Run, final = false) => {
+      const earned = earnedAchievements(
+        {
+          distance: s.distance,
+          votes: s.votes,
+          chai: s.chai,
+          flights: s.flights,
+          slides: s.slides,
+          collabs: s.collabs,
+          maxChain: s.maxChain,
+          score: runnerScore(s.distance, s.points),
+        },
+        { runs: runsRef.current },
+      );
+      const fresh = earned.filter((id) => !unlockedRef.current.includes(id));
+      if (!fresh.length) return;
+      unlockedRef.current = [...unlockedRef.current, ...fresh];
+      writeJson("campus-dash-achievements", unlockedRef.current);
+      setUnlocked(unlockedRef.current);
+      setNewThisRun((list) => [...list, ...fresh]);
+      const first = achievements.find((a) => a.id === fresh[0])!;
+      if (!final) {
+        showToast(`Achievement unlocked: ${first.name}`, "achievement", 2600);
+        audio.current?.achievement();
       }
     };
 
@@ -326,91 +410,201 @@ export default function CampusRunner() {
         c.width = Math.round(w * dpr);
         c.height = Math.round(h * dpr);
       }
-      const horizon = h * 0.3,
-        roadTop = w * 0.075,
-        roadBottom = w * 0.49;
-      const point = (lane: number, z: number) => {
-        const p = z * z;
-        return {
-          x: w / 2 + lane * (roadTop + (roadBottom - roadTop) * p) * 0.66,
-          y: horizon + (h - horizon) * p,
-          scale: 0.15 + p * 1.3,
-        };
-      };
+      const laneX = (lane: number) =>
+        w / 2 + lane * (w * 0.075 + w * 0.415 * 0.7744) * 0.66;
+      const playerY = h * 0.3 + h * 0.7 * 0.7744;
 
       if (s.phase === "running") {
         s.time += dt;
-        s.distance += dt * (18 + Math.min(s.time * 0.15, 16));
-        s.jump = Math.max(0, s.jump - dt);
-        s.grace = Math.max(0, s.grace - dt);
+        s.distance += dt * runnerSpeed(s.time);
+        const flying = s.fly > 0;
+        for (const t of [
+          "jump",
+          "slide",
+          "fly",
+          "magnet",
+          "double",
+          "grace",
+        ] as const)
+          s[t] = Math.max(0, s[t] - dt);
+        if (flying && s.fly === 0) s.grace = Math.max(s.grace, 0.8);
         s.visualLane += (s.lane - s.visualLane) * Math.min(dt * 15, 1);
+        if (s.chain > 0) {
+          s.chainTimer -= dt;
+          if (s.chainTimer <= 0) {
+            const level = multiplier(s.chain);
+            s.chain = level > 1 ? (level - 2) * 8 : 0;
+            s.chainTimer = level > 1 ? CHAIN_WINDOW : 0;
+          }
+        }
+        const zi = zoneIndex(s.distance);
+        if (zi !== s.zone) {
+          s.zone = zi;
+          s.flash = 0.6;
+          const z = zones[zi % zones.length];
+          showToast(`Now entering ${z.name} · ${z.sub}`, "zone", 3000);
+          audio.current?.zone(z.id);
+        }
+        const fact = milestones[s.milestone];
+        if (fact && s.distance >= fact.at) {
+          s.milestone++;
+          showToast(fact.text, "ahmed", 2800);
+          audio.current?.ahmed(fact.text);
+        }
+        s.collabTimer -= dt;
         s.spawn -= dt;
         if (s.spawn <= 0) {
-          s.items.push(...(runnerRow(s.time) as Item[]));
-          s.spawn = Math.max(0.85, 1.55 - s.time / 150);
+          const lane = Math.floor(Math.random() * 3) - 1;
+          const row: Item[] =
+            s.fly > 0.8
+              ? (voteTrail(lane, 5) as Item[])
+              : s.collabTimer <= 0
+                ? (collabRow(s.collabsSpawned++) as Item[])
+                : (runnerRow(
+                    s.time,
+                    zoneAt(s.distance),
+                    Math.random,
+                    s.items,
+                  ) as Item[]);
+          if (s.collabTimer <= 0 && s.fly <= 0.8) s.collabTimer = COLLAB_EVERY;
+          s.items.push(...row);
+          s.spawn = spawnGap(s.time);
         }
-        const next = milestones[s.milestone];
-        if (next && s.distance >= next.at) {
-          s.milestone++;
-          showToast(next.text);
-        }
-        const speed = 0.25 + Math.min(s.time / 260, 0.2);
+        const approach = approachSpeed(s.time);
         for (const item of s.items) {
           const before = item.z;
-          item.z += dt * speed;
+          item.z += dt * (approach + (item.kind === "bus" ? BUS_BOOST : 0));
+          if (s.magnet > 0 && item.kind === "vote" && item.z > 0.5 && !item.hit)
+            item.lane += (s.visualLane - item.lane) * Math.min(dt * 8, 1);
           if (item.hit || before >= 0.88 || item.z < 0.88) continue;
           item.hit = true;
-          const impact = runnerCollision(
-            item.kind,
-            item.lane,
-            s.visualLane,
-            s.jump,
-          );
-          const at = point(item.lane, 0.88);
-          if (impact === "collect" && item.kind === "vote") {
-            s.votes++;
-            burst(at.x, at.y - 30, [C.green, C.yellow, "#ffffff"]);
-          } else if (impact === "collect") {
-            s.shield = true;
-            burst(at.x, at.y - 30, [C.orange, C.yellow, C.cream]);
-            showToast("Chai shield on. Your next crash is forgiven.");
-          } else if (impact === "crash" && (s.shield || s.grace > 0)) {
-            if (s.grace <= 0) {
+          const impact = runnerCollision(item.kind, item.lane, s.visualLane, s);
+          const x = laneX(item.lane),
+            y = playerY - 50;
+          if (impact === "collect") {
+            if (item.kind === "vote") {
+              const levelBefore = multiplier(s.chain);
+              s.chain++;
+              s.maxChain = Math.max(s.maxChain, s.chain);
+              s.chainTimer = CHAIN_WINDOW;
+              const gained = votePoints(s.chain, s.double > 0);
+              s.points += gained;
+              s.votes++;
+              s.floaters.push({
+                x: x + (Math.random() - 0.5) * 40,
+                y: y - s.floaters.length * 14,
+                text: `+${gained}`,
+                life: 0.8,
+                color: C.yellow,
+              });
+              burst(x, y, [C.green, C.yellow, "#ffffff"], 8);
+              audio.current?.vote(multiplier(s.chain));
+              if (multiplier(s.chain) > levelBefore)
+                audio.current?.levelUp(multiplier(s.chain));
+            } else if (item.kind === "collab") {
+              s.collabs++;
+              s.points += COLLAB_POINTS;
+              s.floaters.push({
+                x,
+                y: y - 40,
+                text: `+${COLLAB_POINTS}`,
+                life: 1,
+                color: "#34a853",
+              });
+              burst(
+                x,
+                y - 40,
+                ["#4285f4", "#ea4335", "#fbbc04", "#34a853"],
+                24,
+              );
+              showToast(
+                `Collab unlocked: ${item.label} × Air University`,
+                "collab",
+              );
+              audio.current?.collab(item.label || "");
+            } else {
+              if (item.kind === "chai") {
+                s.shield = true;
+                s.chai++;
+                showToast(
+                  "Chai shield on. Your next crash is forgiven.",
+                  "power",
+                );
+              } else if (item.kind === "wings") {
+                s.fly = FLY;
+                s.flights++;
+                s.jump = 0;
+                s.slide = 0;
+                showToast(
+                  "Fazaia wings! Fly over everything for 5 s.",
+                  "power",
+                );
+              } else if (item.kind === "magnet") {
+                s.magnet = MAGNET;
+                showToast(
+                  "GDG magnet: votes from every lane come to you.",
+                  "power",
+                );
+              } else if (item.kind === "double") {
+                s.double = DOUBLE;
+                showToast("Hackathon trophy: vote points doubled.", "power");
+              }
+              burst(x, y, [C.orange, C.yellow, "#ffffff"], 18);
+              audio.current?.power(item.kind);
+            }
+          } else if (impact === "clear") {
+            if (item.kind === "bar" && s.fly <= 0) s.slides++;
+          } else if (impact === "crash" && s.grace <= 0) {
+            if (s.shield) {
               s.shield = false;
-              s.grace = 0.8;
-              showToast("Chai shield saved you!");
-            }
-            burst(at.x, at.y - 30, [C.orange, C.red, C.yellow]);
-          } else if (impact === "crash") {
-            setCrashTip(
-              item.kind === "deadline"
-                ? "Blue DEADLINE walls are too tall to jump. Switch lanes instead."
-                : "Jump just before a pink QUIZ hurdle reaches you, or switch lanes.",
-            );
-            changePhase("over");
-            const final = runnerScore(s.distance, s.votes);
-            if (final > bestRef.current) {
-              bestRef.current = final;
-              setBest(final);
+              s.grace = 1;
+              s.shake = 0.35;
+              burst(x, y, [C.orange, C.red, C.yellow], 20);
+              showToast("Chai shield saved you!", "power");
+              audio.current?.shield();
+            } else {
+              s.shake = 0.5;
+              setCrashTip(CRASH_TIPS[item.kind] || "");
+              changePhase("over");
+              audio.current?.crash();
               try {
-                localStorage.setItem("campus-dash-best", String(final));
+                navigator.vibrate?.(180);
               } catch {}
+              const final = runnerScore(s.distance, s.points);
+              runsRef.current++;
+              writeJson("campus-dash-runs", runsRef.current);
+              checkAchievements(s, true);
+              if (final > bestRef.current) {
+                if (bestRef.current > 0) audio.current?.newBest();
+                bestRef.current = final;
+                setBest(final);
+                writeJson("campus-dash-best", final);
+              }
+              if (final > boardBest.current) void endRun(s, final);
+              break;
             }
-            if (final > boardBest.current)
-              void endRun(final, s.votes, s.distance, s.time);
-            break;
           }
         }
         s.items = s.items.filter((i) => i.z < 1.15);
-        if (now - hud > 80 || (s.phase as Phase) === "over") {
-          setStats({
+        if (now - hudAt > 90 || (s.phase as Phase) === "over") {
+          hudAt = now;
+          if ((s.phase as Phase) !== "over") checkAchievements(s);
+          setHud({
             distance: Math.floor(s.distance),
             votes: s.votes,
+            points: s.points,
+            chain: s.chain,
+            chainLeft: s.chain > 0 ? s.chainTimer / CHAIN_WINDOW : 0,
             shield: s.shield,
+            fly: s.fly,
+            magnet: s.magnet,
+            double: s.double,
+            zone: s.zone,
           });
-          hud = now;
         }
       }
+      s.shake = Math.max(0, s.shake - dt);
+      s.flash = Math.max(0, s.flash - dt);
       for (const p of s.sparks) {
         p.life -= dt;
         p.x += p.vx * dt;
@@ -418,664 +612,19 @@ export default function CampusRunner() {
         p.vy += 260 * dt;
       }
       s.sparks = s.sparks.filter((p) => p.life > 0);
+      for (const f of s.floaters) {
+        f.life -= dt;
+        f.y -= 60 * dt;
+      }
+      s.floaters = s.floaters.filter((f) => f.life > 0);
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-      // Islamabad daytime sky.
-      const sky = ctx.createLinearGradient(0, 0, 0, horizon);
-      sky.addColorStop(0, "#2fa8ec");
-      sky.addColorStop(0.7, "#8fd8fb");
-      sky.addColorStop(1, "#ffe6ad");
-      ctx.fillStyle = sky;
-      ctx.fillRect(0, 0, w, horizon + 2);
-      circle(w * 0.82, h * 0.09, w * 0.075, "#ffe98a");
-      circle(w * 0.82, h * 0.09, w * 0.055, C.yellow);
-      for (let i = 0; i < 4; i++) {
-        const x = ((i * 0.31 + now / 90000) % 1.3) * w - w * 0.15,
-          y = h * (0.05 + (i % 2) * 0.06),
-          r = w * 0.03;
-        circle(x, y, r, "#ffffffdd");
-        circle(x + r, y - r * 0.5, r * 1.2, "#ffffffdd");
-        circle(x + r * 2.2, y, r, "#ffffffdd");
-      }
-      // A PAF jet flies over every 16 seconds.
-      const pass = (now / 16000) % 1;
-      if (pass < 0.3) {
-        const t = pass / 0.3,
-          jx = -60 + t * (w + 120),
-          jy = h * 0.2 - t * h * 0.1,
-          js = w / 400;
-        ctx.strokeStyle = "#ffffffcc";
-        ctx.lineWidth = 3 * js;
-        ctx.beginPath();
-        ctx.moveTo(jx - 150 * js, jy + 38 * js);
-        ctx.lineTo(jx - 12 * js, jy + 3 * js);
-        ctx.stroke();
-        ctx.fillStyle = "#5b6b86";
-        ctx.beginPath();
-        ctx.moveTo(jx + 16 * js, jy - 4 * js);
-        ctx.lineTo(jx - 12 * js, jy + 2 * js);
-        ctx.lineTo(jx - 16 * js, jy - 6 * js);
-        ctx.lineTo(jx - 8 * js, jy - 3 * js);
-        ctx.lineTo(jx - 2 * js, jy - 12 * js);
-        ctx.lineTo(jx + 3 * js, jy - 4 * js);
-        ctx.closePath();
-        ctx.fill();
-      }
-      // Margalla Hills, far and near ridges.
-      const ridge = (
-        base: number,
-        amp: (x: number) => number,
-        fill: string,
-      ) => {
-        ctx.fillStyle = fill;
-        ctx.beginPath();
-        ctx.moveTo(0, horizon + 2);
-        for (let x = 0; x <= w + 8; x += 8)
-          ctx.lineTo(x, base - amp((x / w) * 400));
-        ctx.lineTo(w, horizon + 2);
-        ctx.closePath();
-        ctx.fill();
-      };
-      ridge(
-        horizon,
-        (x) =>
-          h *
-          (0.17 + 0.05 * Math.sin(x * 0.011) + 0.025 * Math.sin(x * 0.033 + 1)),
-        "#86bfa6",
-      );
-      ridge(
-        horizon,
-        (x) =>
-          h *
-          (0.08 + 0.03 * Math.sin(x * 0.019 + 2) + 0.012 * Math.sin(x * 0.06)),
-        "#3a9a62",
-      );
-      // Faisal Mosque at the foot of the hills.
-      const mx = w * 0.24,
-        my = horizon,
-        mw = w * 0.13,
-        mh = h * 0.07;
-      ctx.fillStyle = "#fbf8ff";
-      ctx.beginPath();
-      ctx.moveTo(mx - mw / 2, my);
-      ctx.lineTo(mx, my - mh);
-      ctx.lineTo(mx + mw / 2, my);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = "#d8d0ee";
-      ctx.beginPath();
-      ctx.moveTo(mx, my - mh);
-      ctx.lineTo(mx + mw / 2, my);
-      ctx.lineTo(mx, my);
-      ctx.closePath();
-      ctx.fill();
-      for (const side of [-1, 1]) {
-        box(
-          mx + side * mw * 0.78 - 1.5,
-          my - mh * 1.7,
-          3,
-          mh * 1.7,
-          1,
-          "#fbf8ff",
-        );
-        ctx.fillStyle = "#fbf8ff";
-        ctx.beginPath();
-        ctx.moveTo(mx + side * mw * 0.78 - 2, my - mh * 1.7);
-        ctx.lineTo(mx + side * mw * 0.78, my - mh * 2.05);
-        ctx.lineTo(mx + side * mw * 0.78 + 2, my - mh * 1.7);
-        ctx.fill();
-      }
-      // Campus blocks and the national flag on the right.
-      const blocks = [
-        ["#e2694a", 0.05],
-        [C.cream, 0.075],
-        ["#f39a3d", 0.06],
-        [C.cream, 0.085],
-        ["#e2694a", 0.055],
-      ] as const;
-      blocks.forEach(([fill, bh], i) => {
-        const bx = w * (0.56 + i * 0.09),
-          bw = w * 0.1,
-          top = horizon - h * bh;
-        box(bx, top, bw, h * bh + 2, 2, fill);
-        ctx.fillStyle = fill === C.cream ? "#2f6bff99" : "#fff3d6aa";
-        for (let r = 0; r < 2; r++)
-          for (let k = 0; k < 3; k++)
-            ctx.fillRect(
-              bx + bw * (0.15 + k * 0.28),
-              top + h * (0.012 + r * 0.02),
-              bw * 0.14,
-              h * 0.01,
-            );
-      });
-      const fx = w * 0.53,
-        fy = horizon - h * 0.12;
-      ctx.fillStyle = "#8a8f9e";
-      ctx.fillRect(fx, fy, 2, h * 0.12);
-      box(fx + 2, fy, w * 0.055, h * 0.032, 1, C.pakGreen);
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(fx + 2, fy, w * 0.014, h * 0.032);
-      circle(fx + 2 + w * 0.034, fy + h * 0.016, h * 0.009, "#ffffff");
-      circle(fx + 2 + w * 0.037, fy + h * 0.014, h * 0.008, C.pakGreen);
-
-      // Grass bands give a sense of speed.
-      ctx.fillStyle = "#5cc46b";
-      ctx.fillRect(0, horizon, w, h - horizon);
-      for (let i = 0; i < 14; i += 2) {
-        const z0 = (i / 14 + s.distance / 160) % 1,
-          z1 = Math.min(z0 + 1 / 14, 1);
-        const y0 = point(0, z0).y,
-          y1 = point(0, z1).y;
-        ctx.fillStyle = "#4db55f";
-        ctx.fillRect(0, y0, w, y1 - y0);
-      }
-      // Road.
-      ctx.beginPath();
-      ctx.moveTo(w / 2 - roadTop, horizon);
-      ctx.lineTo(w / 2 + roadTop, horizon);
-      ctx.lineTo(w / 2 + roadBottom, h);
-      ctx.lineTo(w / 2 - roadBottom, h);
-      ctx.closePath();
-      ctx.fillStyle = "#4a4468";
-      ctx.fill();
-      // Black-and-yellow kerbs, like every road in the city.
-      for (let i = 0; i < 24; i++) {
-        const z0 = (i / 24 + s.distance / 180) % 1,
-          z1 = Math.min(z0 + 1 / 24, 1);
-        ctx.fillStyle = i % 2 ? "#23202f" : C.yellow;
-        for (const side of [-1, 1]) {
-          const a = point(side * 1.5, z0),
-            b = point(side * 1.5, z1),
-            c2 = point(side * 1.64, z1),
-            d = point(side * 1.64, z0);
-          ctx.beginPath();
-          ctx.moveTo(a.x, a.y);
-          ctx.lineTo(b.x, b.y);
-          ctx.lineTo(c2.x, c2.y);
-          ctx.lineTo(d.x, d.y);
-          ctx.closePath();
-          ctx.fill();
-        }
-      }
-      for (let i = 0; i < 16; i++) {
-        const z = (i / 16 + s.distance / 180) % 1;
-        for (const lane of [-0.5, 0.5]) {
-          const a = point(lane, z),
-            b = point(lane, Math.min(z + 0.02, 1));
-          ctx.beginPath();
-          ctx.moveTo(a.x, a.y);
-          ctx.lineTo(b.x, b.y);
-          ctx.strokeStyle = "#ffffffcc";
-          ctx.lineWidth = 1 + z * 4;
-          ctx.stroke();
-        }
-      }
-
-      // Roadside scenery, far to near.
-      type Prop = { z: number; draw: () => void };
-      const props: Prop[] = [];
-      for (let i = 0; i < 8; i++) {
-        const z = (i / 8 + s.distance / 220) % 1;
-        for (const side of [-1, 1]) {
-          props.push({
-            z,
-            draw: () => {
-              const p = point(side * 2.05, z);
-              box(
-                p.x - 2 * p.scale,
-                p.y - 55 * p.scale,
-                5 * p.scale,
-                55 * p.scale,
-                1,
-                "#7a4b2a",
-              );
-              const leaf =
-                (i + (side > 0 ? 1 : 0)) % 4 === 0
-                  ? "#ff8fbf"
-                  : i % 2
-                    ? "#2e9e5b"
-                    : "#3fb86a";
-              circle(p.x, p.y - 62 * p.scale, 20 * p.scale, leaf);
-              circle(
-                p.x - 11 * p.scale,
-                p.y - 52 * p.scale,
-                13 * p.scale,
-                leaf,
-              );
-              circle(
-                p.x + 11 * p.scale,
-                p.y - 52 * p.scale,
-                13 * p.scale,
-                leaf,
-              );
-            },
-          });
-        }
-      }
-      for (let i = 0; i < 3; i++) {
-        const phase = i / 3 + s.distance / 420,
-          z = phase % 1,
-          text =
-            SIGNS[
-              (((i - Math.floor(phase)) % SIGNS.length) + SIGNS.length) %
-                SIGNS.length
-            ],
-          side = i % 2 ? 1 : -1;
-        props.push({
-          z,
-          draw: () => {
-            const p = point(side * 2.7, z);
-            if (p.scale < 0.2) return;
-            const sw = 78 * p.scale,
-              sh = 22 * p.scale;
-            box(
-              p.x - 1.5 * p.scale,
-              p.y - 60 * p.scale,
-              3 * p.scale,
-              60 * p.scale,
-              1,
-              "#8a8f9e",
-            );
-            box(
-              p.x - sw / 2,
-              p.y - 70 * p.scale,
-              sw,
-              sh,
-              3 * p.scale,
-              "#0b7a3e",
-            );
-            ctx.strokeStyle = "#ffffff";
-            ctx.lineWidth = Math.max(1, 1.5 * p.scale);
-            ctx.beginPath();
-            ctx.roundRect(
-              p.x - sw / 2 + 2 * p.scale,
-              p.y - 68 * p.scale,
-              sw - 4 * p.scale,
-              sh - 4 * p.scale,
-              2 * p.scale,
-            );
-            ctx.stroke();
-            ctx.fillStyle = "#ffffff";
-            ctx.font = `800 ${8.5 * p.scale}px Rubik, Arial, sans-serif`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText(text, p.x, p.y - 59 * p.scale, sw - 8 * p.scale);
-          },
-        });
-      }
-      // Jhandiyan (flag bunting) strung across the road.
-      for (let i = 0; i < 2; i++) {
-        const z = (i / 2 + s.distance / 300) % 1;
-        props.push({
-          z,
-          draw: () => {
-            if (z < 0.08) return;
-            const l = point(-1.75, z),
-              r = point(1.75, z),
-              top = 95 * l.scale;
-            ctx.fillStyle = "#6b6f80";
-            ctx.fillRect(l.x - 1.5 * l.scale, l.y - top, 3 * l.scale, top);
-            ctx.fillRect(r.x - 1.5 * r.scale, r.y - top, 3 * r.scale, top);
-            const n = 11,
-              sag = 18 * l.scale;
-            for (let k = 0; k < n; k++) {
-              const t0 = k / n,
-                t1 = (k + 1) / n,
-                x0 = l.x + (r.x - l.x) * t0,
-                x1 = l.x + (r.x - l.x) * t1,
-                y0 = l.y - top + Math.sin(t0 * Math.PI) * sag,
-                y1 = l.y - top + Math.sin(t1 * Math.PI) * sag;
-              ctx.fillStyle = FLAGS[k % FLAGS.length];
-              ctx.beginPath();
-              ctx.moveTo(x0, y0);
-              ctx.lineTo(x1, y1);
-              ctx.lineTo((x0 + x1) / 2, (y0 + y1) / 2 + 14 * l.scale);
-              ctx.closePath();
-              ctx.fill();
-            }
-            if (l.scale < 0.3) return;
-            const pw = 104 * l.scale,
-              ph = 20 * l.scale,
-              panelY = l.y - top + sag + 4 * l.scale;
-            box((l.x + r.x) / 2 - pw / 2, panelY, pw, ph, 3 * l.scale, C.red);
-            ctx.fillStyle = "#ffffff";
-            ctx.font = `800 ${9 * l.scale}px Rubik, Arial, sans-serif`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText(
-              "VOTE AHMED MALIK",
-              (l.x + r.x) / 2,
-              panelY + ph / 2,
-              pw - 6,
-            );
-          },
-        });
-      }
-      // Election billboards with Ahmed's photo, like every campaign season.
-      for (let i = 0; i < 2; i++) {
-        const z = (i / 2 + 0.25 + s.distance / 520) % 1,
-          side = i % 2 ? -1 : 1;
-        props.push({
-          z,
-          draw: () => {
-            const p = point(side * 1.95, z),
-              k = p.scale * 1.2;
-            if (p.scale < 0.22) return;
-            const bw = 132 * k,
-              bh = 62 * k,
-              bx = side > 0 ? p.x : p.x - bw,
-              by = p.y - 50 * k - bh;
-            ctx.fillStyle = "#6b6f80";
-            ctx.fillRect(bx + bw * 0.2, by + bh, 3 * k, 50 * k);
-            ctx.fillRect(bx + bw * 0.78, by + bh, 3 * k, 50 * k);
-            box(bx - 3 * k, by - 3 * k, bw + 6 * k, bh + 6 * k, 4 * k, C.ink);
-            box(bx, by, bw, bh, 3 * k, C.yellow);
-            const ps = bh - 8 * k;
-            if (face.complete && face.naturalWidth) {
-              ctx.save();
-              ctx.beginPath();
-              ctx.roundRect(bx + 4 * k, by + 4 * k, ps, ps, 3 * k);
-              ctx.clip();
-              ctx.drawImage(face, bx + 4 * k, by + 4 * k, ps, ps);
-              ctx.restore();
-            } else box(bx + 4 * k, by + 4 * k, ps, ps, 3 * k, C.pink);
-            const tx = bx + ps + 10 * k,
-              tw = bw - ps - 14 * k;
-            ctx.textAlign = "left";
-            ctx.textBaseline = "alphabetic";
-            ctx.fillStyle = C.ink;
-            ctx.font = `900 ${11.5 * k}px Rubik, Arial, sans-serif`;
-            ctx.fillText("AHMED", tx, by + 15 * k, tw);
-            ctx.fillText("MALIK", tx, by + 27 * k, tw);
-            ctx.font = `700 ${6.3 * k}px Rubik, Arial, sans-serif`;
-            ctx.fillText("VP · GDGOC AIR UNI", tx, by + 36 * k, tw);
-            ctx.fillStyle = C.red;
-            ctx.fillText(
-              "ROLL NO. " + campaign.rollNumber,
-              tx,
-              by + 44 * k,
-              tw,
-            );
-            box(tx - 1 * k, by + 48 * k, tw + 2 * k, 10 * k, 2 * k, C.green);
-            ctx.fillStyle = "#ffffff";
-            ctx.font = `800 ${6.3 * k}px Rubik, Arial, sans-serif`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText("VOTE 21-22 SEP", tx + tw / 2, by + 53 * k, tw);
-          },
-        });
-      }
-      for (const item of s.items) {
-        if (item.hit && (item.kind === "vote" || item.kind === "chai"))
-          continue;
-        props.push({ z: item.z, draw: () => drawItem(item) });
-      }
-      const drawItem = (item: Item) => {
-        const p = point(item.lane, item.z),
-          u = Math.min(w * 0.115, 56) * p.scale;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        if (item.kind === "vote") {
-          const y = p.y - u * 0.75 + Math.sin(now / 220 + item.lane) * u * 0.08;
-          circle(p.x, y, u * 0.48, "#ffc20e55");
-          ctx.save();
-          ctx.translate(p.x, y);
-          ctx.rotate(-0.14);
-          box(-u * 0.27, -u * 0.34, u * 0.54, u * 0.68, u * 0.06, "#ffffff");
-          ctx.strokeStyle = C.ink;
-          ctx.lineWidth = Math.max(1, u * 0.05);
-          ctx.strokeRect(-u * 0.27, -u * 0.34, u * 0.54, u * 0.68);
-          ctx.strokeStyle = C.green;
-          ctx.lineWidth = Math.max(1.5, u * 0.1);
-          ctx.lineCap = "round";
-          ctx.beginPath();
-          ctx.moveTo(-u * 0.14, 0);
-          ctx.lineTo(-u * 0.03, u * 0.12);
-          ctx.lineTo(u * 0.16, -u * 0.14);
-          ctx.stroke();
-          ctx.restore();
-        } else if (item.kind === "chai") {
-          const y = p.y - u * 0.7 + Math.sin(now / 200) * u * 0.06;
-          circle(p.x, y, u * 0.5, "#ff7a1a44");
-          ctx.strokeStyle = "#ffffff";
-          ctx.lineWidth = Math.max(1, u * 0.06);
-          ctx.beginPath();
-          ctx.arc(p.x + u * 0.22, y + u * 0.02, u * 0.12, -1.2, 1.2);
-          ctx.stroke();
-          ctx.fillStyle = C.orange;
-          ctx.beginPath();
-          ctx.moveTo(p.x - u * 0.26, y - u * 0.16);
-          ctx.lineTo(p.x + u * 0.26, y - u * 0.16);
-          ctx.lineTo(p.x + u * 0.19, y + u * 0.24);
-          ctx.lineTo(p.x - u * 0.19, y + u * 0.24);
-          ctx.closePath();
-          ctx.fill();
-          box(
-            p.x - u * 0.29,
-            y - u * 0.2,
-            u * 0.58,
-            u * 0.08,
-            u * 0.03,
-            C.cream,
-          );
-          ctx.strokeStyle = "#ffffffcc";
-          for (const dx of [-0.1, 0.08]) {
-            ctx.beginPath();
-            ctx.moveTo(p.x + u * dx, y - u * 0.28);
-            ctx.quadraticCurveTo(
-              p.x + u * (dx + 0.08),
-              y - u * 0.4,
-              p.x + u * dx,
-              y - u * 0.52,
-            );
-            ctx.stroke();
-          }
-        } else if (item.kind === "quiz") {
-          box(p.x - u * 0.5, p.y - u * 0.7, u * 0.07, u * 0.7, 1, C.ink);
-          box(p.x + u * 0.43, p.y - u * 0.7, u * 0.07, u * 0.7, 1, C.ink);
-          box(
-            p.x - u * 0.58,
-            p.y - u * 0.78,
-            u * 1.16,
-            u * 0.46,
-            u * 0.08,
-            C.pink,
-          );
-          box(
-            p.x - u * 0.58,
-            p.y - u * 0.78,
-            u * 1.16,
-            u * 0.09,
-            u * 0.04,
-            C.yellow,
-          );
-          ctx.fillStyle = "#ffffff";
-          ctx.font = `800 ${u * 0.26}px Rubik, Arial, sans-serif`;
-          ctx.fillText("QUIZ", p.x, p.y - u * 0.52);
-        } else {
-          box(
-            p.x - u * 0.55,
-            p.y - u * 1.65,
-            u * 1.1,
-            u * 1.65,
-            u * 0.08,
-            C.blue,
-          );
-          ctx.fillStyle = "#1f4fd6";
-          for (let k = 0; k < 3; k++)
-            ctx.fillRect(
-              p.x - u * 0.55,
-              p.y - u * (0.32 + k * 0.3),
-              u * 1.1,
-              u * 0.06,
-            );
-          circle(p.x, p.y - u * 1.3, u * 0.22, "#ffffff");
-          ctx.strokeStyle = C.ink;
-          ctx.lineWidth = Math.max(1, u * 0.05);
-          ctx.beginPath();
-          ctx.moveTo(p.x, p.y - u * 1.42);
-          ctx.lineTo(p.x, p.y - u * 1.3);
-          ctx.lineTo(p.x + u * 0.1, p.y - u * 1.25);
-          ctx.stroke();
-          ctx.fillStyle = C.yellow;
-          ctx.font = `800 ${u * 0.19}px Rubik, Arial, sans-serif`;
-          ctx.fillText("DEADLINE", p.x, p.y - u * 0.92, u * 1);
-        }
-      };
-      props
-        .sort((a, b) => a.z - b.z)
-        .forEach((prop) => {
-          if (prop.z < 0.88) prop.draw();
-        });
-
-      // The student: seen from behind, GDG-badged backpack and all.
-      const player = point(s.visualLane, 0.88),
-        u = Math.min(w * 0.08, 36),
-        air = Math.sin((s.jump / 0.85) * Math.PI) * h * 0.17;
-      ctx.fillStyle = "#0003";
-      ctx.beginPath();
-      ctx.ellipse(
-        player.x,
-        player.y + 5,
-        u * 0.9 * (1 - air / h),
-        u * 0.24,
-        0,
-        0,
-        Math.PI * 2,
-      );
-      ctx.fill();
-      const moving = s.phase === "running" && !s.jump;
-      const bob = moving ? Math.sin(s.time * 22) * 3 : 0,
-        py = player.y - air + bob,
-        stride = moving ? Math.sin(s.time * 18) * u * 0.22 : 0;
-      if (!(s.grace > 0 && Math.floor(now / 80) % 2)) {
-        box(
-          player.x - u * 0.46,
-          py - u * 0.62 + stride,
-          u * 0.36,
-          u * 0.66,
-          5,
-          "#2b3a78",
-        );
-        box(
-          player.x + u * 0.1,
-          py - u * 0.62 - stride,
-          u * 0.36,
-          u * 0.66,
-          5,
-          "#2b3a78",
-        );
-        box(
-          player.x - u * 0.5,
-          py - u * 0.06 + stride,
-          u * 0.42,
-          u * 0.18,
-          4,
-          "#ffffff",
-        );
-        box(
-          player.x + u * 0.08,
-          py - u * 0.06 - stride,
-          u * 0.42,
-          u * 0.18,
-          4,
-          "#ffffff",
-        );
-        // Ahmed's jersey: name across the back, roll number as the shirt number.
-        box(
-          player.x - u * 0.95,
-          py - u * 1.78,
-          u * 0.3,
-          u * 0.9,
-          u * 0.14,
-          "#b87a4e",
-        );
-        box(
-          player.x + u * 0.65,
-          py - u * 1.78,
-          u * 0.3,
-          u * 0.9,
-          u * 0.14,
-          "#b87a4e",
-        );
-        box(
-          player.x - u * 0.78,
-          py - u * 1.86,
-          u * 1.56,
-          u * 1.42,
-          u * 0.3,
-          "#0f8a3f",
-        );
-        box(
-          player.x - u * 0.78,
-          py - u * 0.62,
-          u * 1.56,
-          u * 0.16,
-          3,
-          C.yellow,
-        );
-        ctx.fillStyle = C.yellow;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.font = `900 ${u * 0.34}px Rubik, Arial, sans-serif`;
-        ctx.fillText("AHMED", player.x, py - u * 1.56, u * 1.4);
-        ctx.fillStyle = "#ffffff";
-        ctx.font = `900 ${u * 0.36}px Rubik, Arial, sans-serif`;
-        ctx.fillText(campaign.rollNumber, player.x, py - u * 1.08, u * 1.4);
-        box(player.x - u * 0.2, py - u * 2.06, u * 0.4, u * 0.25, 4, "#b87a4e");
-        box(
-          player.x - u * 0.47,
-          py - u * 2.68,
-          u * 0.94,
-          u * 0.76,
-          u * 0.36,
-          "#141414",
-        );
-        box(player.x - u * 0.52, py - u * 2.28, u * 0.1, u * 0.2, 2, "#b87a4e");
-        box(player.x + u * 0.42, py - u * 2.28, u * 0.1, u * 0.2, 2, "#b87a4e");
-        ctx.strokeStyle = "#141414";
-        ctx.lineWidth = Math.max(1, u * 0.06);
-        ctx.beginPath();
-        ctx.moveTo(player.x - u * 0.5, py - u * 2.3);
-        ctx.lineTo(player.x + u * 0.5, py - u * 2.3);
-        ctx.stroke();
-        if (s.phase !== "running" || s.time < 3) {
-          const label = `AHMED MALIK · ${campaign.rollNumber}`;
-          ctx.font = `800 ${Math.max(10, u * 0.36)}px Rubik, Arial, sans-serif`;
-          const lw = ctx.measureText(label).width + 16;
-          box(player.x - lw / 2, py - u * 3.5, lw, u * 0.62, 999, C.ink);
-          ctx.fillStyle = "#ffffff";
-          ctx.fillText(label, player.x, py - u * 3.19);
-        }
-      }
-      if (s.shield) {
-        ctx.strokeStyle = `rgba(255,122,26,${0.55 + Math.sin(now / 120) * 0.25})`;
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.ellipse(
-          player.x,
-          py - u * 1.2,
-          u * 1.25,
-          u * 1.75,
-          0,
-          0,
-          Math.PI * 2,
-        );
-        ctx.stroke();
-      }
-      props.forEach((prop) => {
-        if (prop.z >= 0.88) prop.draw();
-      });
-      for (const p of s.sparks) {
-        ctx.globalAlpha = Math.min(1, p.life / 0.3);
-        box(p.x - 3, p.y - 3, 6, 6, 1, p.color);
-      }
-      ctx.globalAlpha = 1;
+      drawScene({ ctx, w, h, s, now, face, rollNumber: campaign.rollNumber });
       frame = requestAnimationFrame(draw);
     };
     frame = requestAnimationFrame(draw);
     return () => {
+      audio.current?.stopMusic();
       cancelAnimationFrame(frame);
       clearTimeout(toastTimer.current);
       window.removeEventListener("keydown", key);
@@ -1083,15 +632,23 @@ export default function CampusRunner() {
     };
   }, []);
 
+  const level = multiplier(hud.chain);
+  const powers = [
+    hud.shield && { id: "shield", text: "Chai shield" },
+    hud.fly > 0 && { id: "wings", text: `Wings ${Math.ceil(hud.fly)}s` },
+    hud.magnet > 0 && {
+      id: "magnet",
+      text: `Magnet ${Math.ceil(hud.magnet)}s`,
+    },
+    hud.double > 0 && { id: "double", text: `x2 ${Math.ceil(hud.double)}s` },
+  ].filter(Boolean) as { id: string; text: string }[];
+
   return (
     <main className="runner-page">
       <div className="runner-patti" aria-hidden="true" />
       <div className="runner-wrap">
         <header className="runner-nav">
-          <Link href="/" className="brand">
-            <span className="brand-flower">✳</span> jaago
-            <span className="brand-dot">.</span>
-          </Link>
+          <Brand />
           <nav>
             {countdown && <span className="runner-countdown">{countdown}</span>}
             <Link href="/arcade">Arcade</Link>
@@ -1102,7 +659,7 @@ export default function CampusRunner() {
           <section className="runner-intro">
             <div className="runner-tags">
               <span className="tag-pink">GDGOC Air University elections</span>
-              <span className="tag-green">E-9, Islamabad</span>
+              <span className="tag-green">E-9 → Kamra → Multan</span>
             </div>
             <h1>
               Dodge <mark className="hl-blue">deadlines.</mark>
@@ -1112,9 +669,9 @@ export default function CampusRunner() {
               Vote <mark className="hl-red">Ahmed.</mark>
             </h1>
             <p>
-              Run the E-9 campus in Ahmed’s No. {campaign.rollNumber} jersey,
-              past his campaign billboards and the Margallas. No sign-up, just
-              one more try.
+              Run across every Air University campus in Ahmed’s No.{" "}
+              {campaign.rollNumber} jersey: the library, the cafes, FMC, Kamra
+              and Multan. It gets faster. How far can you get?
             </p>
             <Link href="/ahmed" className="runner-profile">
               <img
@@ -1140,36 +697,101 @@ export default function CampusRunner() {
                 </span>
               </span>
             </Link>
+
+            <h2 className="runner-section-title">How to play</h2>
             <ol className="runner-how">
               <li>
                 <b className="key-blue">← →</b>
                 <span>
-                  <strong>Switch lanes</strong>Swipe sideways or use the arrow
-                  keys.
+                  <strong>Switch lanes</strong>Swipe sideways or arrow keys.
                 </span>
               </li>
               <li>
                 <b className="key-pink">↑</b>
                 <span>
-                  <strong>Jump the pink QUIZ hurdles</strong>Swipe up or press
-                  Space.
+                  <strong>Jump pink hurdles</strong>Swipe up, ↑ or Space.
                 </span>
               </li>
               <li>
-                <b className="key-indigo">⏰</b>
+                <b className="key-purple">↓</b>
                 <span>
-                  <strong>Dodge blue DEADLINE walls</strong>Too tall to jump.
-                  Change lanes.
+                  <strong>Slide under purple bars</strong>Swipe down or ↓.
                 </span>
               </li>
               <li>
-                <b className="key-orange">☕</b>
+                <b className="key-indigo">!</b>
                 <span>
-                  <strong>Grab chai for a shield</strong>It forgives your next
-                  crash.
+                  <strong>Dodge blue walls &amp; AU shuttles</strong>Can’t jump
+                  those. Change lanes.
+                </span>
+              </li>
+              <li>
+                <b className="key-orange">x5</b>
+                <span>
+                  <strong>Chain votes for x5 points</strong>Stop collecting for
+                  3 s and it drops.
+                </span>
+              </li>
+              <li>
+                <b className="key-green">+300</b>
+                <span>
+                  <strong>Run through collab gates</strong>NUST, FAST, COMSATS
+                  and more.
                 </span>
               </li>
             </ol>
+            <div className="runner-powers">
+              <span className="pw-chai">
+                <b>Chai</b> shield
+              </span>
+              <span className="pw-wings">
+                <b>Fazaia wings</b> fly 5 s
+              </span>
+              <span className="pw-magnet">
+                <b>GDG magnet</b> pull votes
+              </span>
+              <span className="pw-double">
+                <b>Trophy</b> x2 points
+              </span>
+            </div>
+
+            <h2 className="runner-section-title">The route</h2>
+            <ol className="runner-route">
+              {zones.map((z, i) => (
+                <li
+                  key={z.id}
+                  className={best >= ZONE_LENGTH * i ? "reached" : ""}
+                >
+                  <b>{i * ZONE_LENGTH} m</b>
+                  <span>
+                    <strong>{z.name}</strong>
+                    {z.sub}
+                  </span>
+                </li>
+              ))}
+            </ol>
+
+            <h2 className="runner-section-title">
+              Achievements{" "}
+              <small>
+                {unlocked.length}/{achievements.length}
+              </small>
+            </h2>
+            <ul className="runner-achievements">
+              {achievements.map((a) => (
+                <li
+                  key={a.id}
+                  className={unlocked.includes(a.id) ? "got" : ""}
+                  title={a.desc}
+                >
+                  <b>{a.badge}</b>
+                  <span>
+                    <strong>{a.name}</strong>
+                    {a.desc}
+                  </span>
+                </li>
+              ))}
+            </ul>
             <Link className="runner-more" href="/arcade">
               Prefer something calmer? Try the other games →
             </Link>
@@ -1195,12 +817,45 @@ export default function CampusRunner() {
                 <div>
                   <small>Votes</small>
                   <strong>
-                    <i aria-hidden="true">✓</i> {stats.votes}
+                    <i aria-hidden="true">✓</i> {hud.votes}
                   </strong>
                 </div>
-                {stats.shield && (
-                  <span className="runner-shield">☕ Shield</span>
-                )}
+                <div className={"runner-mult level-" + level}>
+                  <small>Chain</small>
+                  <strong>x{level}</strong>
+                  <span style={{ width: `${hud.chainLeft * 100}%` }} />
+                </div>
+                <button
+                  className="runner-sound"
+                  aria-label={muted ? "Turn sound on" : "Mute sound"}
+                  aria-pressed={!muted}
+                  onClick={toggleMute}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="18"
+                    height="18"
+                    aria-hidden="true"
+                  >
+                    <path d="M4 9h4l5-4v14l-5-4H4Z" fill="currentColor" />
+                    {muted ? (
+                      <path
+                        d="m16 9 5 6m0-6-5 6"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      />
+                    ) : (
+                      <path
+                        d="M16 8.5q2.5 3.5 0 7M18.5 6q4.5 6 0 12"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      />
+                    )}
+                  </svg>
+                </button>
                 <button
                   aria-label={phase === "paused" ? "Resume game" : "Pause game"}
                   disabled={phase === "ready" || phase === "over"}
@@ -1227,6 +882,7 @@ export default function CampusRunner() {
                   if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) return;
                   if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 1 : -1);
                   else if (dy < 0) jump();
+                  else slide();
                 }}
                 onPointerCancel={() => {
                   touch.current = null;
@@ -1235,14 +891,26 @@ export default function CampusRunner() {
                 <canvas
                   ref={canvas}
                   tabIndex={0}
-                  aria-label="Three-lane campus runner. Left and right arrows switch lanes. Space or up arrow jumps. Escape pauses."
+                  aria-label="Three-lane campus runner. Left and right switch lanes, up or Space jumps, down slides, Escape pauses."
                 />
-                {phase === "running" && (toast || stats.distance < 85) && (
+                {phase === "running" && (toast || hud.distance < 120) && (
                   <div
-                    className={"runner-coach" + (toast ? " toast" : "")}
+                    className={
+                      "runner-coach" + (toast ? " toast " + toast.kind : "")
+                    }
                     role="status"
                   >
-                    {toast || "Collect the ✓ votes · Switch lanes with ← →"}
+                    {toast?.text || "Swipe ↑ jump · ↓ slide · ← → switch lanes"}
+                  </div>
+                )}
+                {phase === "running" && (
+                  <div className="runner-status">
+                    <span className="runner-zone">{zone.name}</span>
+                    {powers.map((p) => (
+                      <span key={p.id} className={"runner-power " + p.id}>
+                        {p.text}
+                      </span>
+                    ))}
                   </div>
                 )}
                 {phase !== "running" && (
@@ -1279,14 +947,28 @@ export default function CampusRunner() {
                       )}
                       <p>
                         {phase === "ready"
-                          ? `Wear his No. ${campaign.rollNumber} jersey. Collect votes, jump quizzes, dodge deadlines.`
+                          ? "From E-9 to Multan: jump, slide, dodge shuttles and chain votes. It gets faster."
                           : phase === "paused"
                             ? "Your run is right where you left it."
-                            : `${stats.distance} m · ${stats.votes} votes · best ${best.toLocaleString()}`}
+                            : `${hud.distance.toLocaleString()} m · ${hud.votes} votes · reached ${zone.name}`}
                       </p>
-                      {phase === "over" && claim === "idle" && (
-                        <p className="runner-tip">{crashTip}</p>
+                      {phase === "over" && newThisRun.length > 0 && (
+                        <div className="runner-new-badges">
+                          {newThisRun.map((id) => {
+                            const a = achievements.find((x) => x.id === id)!;
+                            return (
+                              <span key={id}>
+                                <b>{a.badge}</b> {a.name}
+                              </span>
+                            );
+                          })}
+                        </div>
                       )}
+                      {phase === "over" &&
+                        claim === "idle" &&
+                        newThisRun.length === 0 && (
+                          <p className="runner-tip">{crashTip}</p>
+                        )}
                       {phase === "over" && claim === "ask" && (
                         <button
                           className="runner-claim"
@@ -1333,7 +1015,7 @@ export default function CampusRunner() {
                             target="_blank"
                             rel="noopener noreferrer"
                           >
-                            Share on WhatsApp
+                            Challenge friends on WhatsApp
                           </a>
                         )}
                       </div>
@@ -1352,7 +1034,9 @@ export default function CampusRunner() {
                           </span>
                         </Link>
                       ) : (
-                        <small>Swipe or ← → to move · ↑ / Space to jump</small>
+                        <small>
+                          Swipe or arrows: ↑ jump · ↓ slide · ← → move
+                        </small>
                       )}
                     </div>
                   </div>
@@ -1360,20 +1044,35 @@ export default function CampusRunner() {
               </div>
               <div className="runner-controls">
                 <button aria-label="Move left" onClick={() => move(-1)}>
-                  ← <span>Left</span>
+                  ←
                 </button>
                 <button className="jump" aria-label="Jump" onClick={jump}>
                   ↑ <span>Jump</span>
                 </button>
+                <button className="slide" aria-label="Slide" onClick={slide}>
+                  ↓ <span>Slide</span>
+                </button>
                 <button aria-label="Move right" onClick={() => move(1)}>
-                  <span>Right</span> →
+                  →
                 </button>
               </div>
               <div className="runner-machine-footer">
                 <span>
                   Personal best <b>{best.toLocaleString()}</b>
                 </span>
-                <span>1 vote = 25 points</span>
+                <button
+                  className={"runner-rot" + (brainrot ? " on" : "")}
+                  aria-pressed={brainrot}
+                  onClick={toggleBrainrot}
+                >
+                  Brainrot {brainrot ? "on" : "off"}
+                </button>
+                <span>
+                  Achievements{" "}
+                  <b>
+                    {unlocked.length}/{achievements.length}
+                  </b>
+                </span>
               </div>
             </section>
             <LiveBoard game="dash" limit={10} refreshKey={boardKey} />
@@ -1400,7 +1099,8 @@ export default function CampusRunner() {
           </Link>
           <p>
             Independent student campaign. Not an official Google, GDG or Air
-            University website.
+            University website. Collab gates are game fun, not partnership
+            claims.
           </p>
         </footer>
       </div>

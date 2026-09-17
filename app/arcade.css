@@ -987,3 +987,69 @@
     animation: none;
   }
 }
+.campaign-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 44px;
+  color: var(--ink);
+}
+.campaign-mark {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  background: var(--yellow);
+  color: #1faa59;
+  border: 2.5px solid var(--ink);
+  border-radius: 10px;
+  box-shadow: 3px 3px 0 var(--ink);
+  transform: rotate(-4deg);
+}
+.campaign-mark svg {
+  width: 28px;
+  height: 28px;
+}
+.campaign-name {
+  display: grid;
+  line-height: 1.05;
+}
+.campaign-name strong {
+  font-size: 21px;
+  font-weight: 900;
+  letter-spacing: -0.6px;
+}
+.campaign-name small {
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--red);
+}
+@media (max-width: 680px) {
+  .campaign-brand {
+    gap: 9px;
+  }
+  .campaign-mark {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    box-shadow: 2px 2px 0 var(--ink);
+  }
+  .campaign-mark svg {
+    width: 22px;
+    height: 22px;
+  }
+  .campaign-name strong {
+    font-size: 17px;
+  }
+  .campaign-name small {
+    font-size: 9px;
+  }
+}
+.campaign-name strong,
+.campaign-name small {
+  white-space: nowrap;
+}

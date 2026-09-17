@@ -24,19 +24,31 @@ test("valid round passes and impossible scores fail", () => {
 });
 const run = {
   mode: "dash",
-  score: 1150,
+  score: 2150,
   votes: 20,
-  distance: 650,
+  distance: 850,
+  points: 1300,
+  collabs: 1,
   durationMs: 30000,
 };
-test("campus dash runs are checked against speed and spawn limits", () => {
+test("campus dash runs are checked against speed, spawn and scoring limits", () => {
   assert.equal(validateScore(run, 31000, "dash"), true);
   assert.throws(() => validateScore({ ...run, score: 5000 }, 31000, "dash"));
   assert.throws(() =>
-    validateScore({ ...run, distance: 5000, score: 5500 }, 31000, "dash"),
+    validateScore({ ...run, distance: 5000, score: 6300 }, 31000, "dash"),
   );
   assert.throws(() =>
-    validateScore({ ...run, votes: 200, score: 5650 }, 31000, "dash"),
+    validateScore({ ...run, points: 90000, score: 90850 }, 31000, "dash"),
+  );
+  assert.throws(() =>
+    validateScore(
+      { ...run, collabs: 9, points: 3200, score: 4050 },
+      31000,
+      "dash",
+    ),
+  );
+  assert.throws(() =>
+    validateScore({ ...run, points: undefined }, 31000, "dash"),
   );
   assert.throws(() => validateScore(run, 10000, "dash"));
 });

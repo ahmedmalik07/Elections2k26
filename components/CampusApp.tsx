@@ -11,6 +11,7 @@ import {
   validGame,
 } from "@/lib/arcade.mjs";
 import LiveBoard from "./LiveBoard";
+import Brand from "./Brand";
 import Arcade from "./Arcade";
 import MiniGame from "./MiniGame";
 import Profile from "./Profile";
@@ -475,10 +476,7 @@ export default function CampusApp({
   return (
     <main className={page === "play" ? "app game-shell" : "app"}>
       <header className="topbar">
-        <Link href="/" className="brand">
-          <span className="brand-flower">✳</span> jaago
-          <span className="brand-dot">.</span>
-        </Link>
+        <Brand />
         <span className="edition">A campus that feels alive.</span>
         <Link className="arcade-nav" href="/arcade">
           Arcade
