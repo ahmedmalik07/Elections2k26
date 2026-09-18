@@ -7,9 +7,10 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/validation.test.mjs tests/game.test.mjs tests/arcade.test.mjs tests/runner.test.mjs",
+    "test": "node --test tests/validation.test.mjs tests/game.test.mjs tests/arcade.test.mjs tests/runner.test.mjs tests/boardCache.test.mjs",
     "setup": "node scripts/setup.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "backup": "node scripts/backup.mjs"
   },
   "dependencies": {
     "firebase-admin": "^13.4.0",

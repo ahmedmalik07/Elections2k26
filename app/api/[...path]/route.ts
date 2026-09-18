@@ -8,35 +8,11 @@ import {
   validatedCards,
 } from "@/lib/validation.mjs";
 import { validBoard } from "@/lib/arcade.mjs";
+import { createBoardCache, playersBy } from "@/lib/boardCache.mjs";
 import { campaign } from "@/config/campaign";
 export const runtime = "nodejs";
-// Short per-instance cache so many viewers polling the live boards share Firestore reads.
-const boardCache = new Map<
-  string,
-  { at: number; rows: Record<string, unknown>[] }
->();
-// Campus Dash queries a single field, so it needs no composite index and filters bans in memory.
-function playersBy(store: ReturnType<typeof db>, mode: string) {
-  const field = mode === "classic" ? "bestScore" : `bestScores.${mode}`;
-  const players = store.collection("players");
-  return {
-    top: (limit: number) =>
-      mode === "dash"
-        ? players.orderBy(field, "desc").limit(limit + 10)
-        : players
-            .where("banned", "==", false)
-            .orderBy(field, "desc")
-            .limit(limit),
-    above: (score: number) =>
-      mode === "dash"
-        ? players.where(field, ">", score)
-        : players.where("banned", "==", false).where(field, ">", score),
-    ranked: () =>
-      mode === "dash"
-        ? players.orderBy(field)
-        : players.where("banned", "==", false).orderBy(field),
-  };
-}
+// Live boards come from one cached snapshot document; see lib/boardCache.mjs.
+const boards = createBoardCache();
 async function handle(
   req: NextRequest,
   { params }: { params: Promise<{ path: string[] }> },
@@ -102,75 +78,69 @@ async function handle(
         50,
         Math.max(1, Number(req.nextUrl.searchParams.get("limit")) || 50),
       );
-      const board = playersBy(store, mode);
-      const cacheKey = (dept ? "departments" : mode) + ":" + limit;
-      let cached = boardCache.get(cacheKey);
-      if (!cached || Date.now() - cached.at > 10000) {
-        const docs = await (
-          dept
-            ? store
-                .collection("departments")
-                .orderBy("totalWoken", "desc")
-                .limit(limit)
-            : board.top(limit)
-        ).get();
-        cached = {
-          at: Date.now(),
-          rows: docs.docs
-            .map((d) => ({ id: d.id, ...d.data() }) as Record<string, any>)
-            .filter((d) => dept || d.banned !== true)
-            .map((d) =>
-              dept
-                ? {
-                    id: d.id,
-                    name: d.name,
-                    totalWoken: d.totalWoken,
-                    playerCount: d.playerCount,
-                  }
-                : {
-                    id: d.id,
-                    nickname: d.nickname,
-                    department: d.department,
-                    cardsCollected: d.cardsCollected,
-                    bestScore:
-                      mode === "classic" ? d.bestScore : d.bestScores?.[mode],
-                  },
-            )
-            // Registering creates a 0 score; only people who actually played are listed.
-            .filter((d) => dept || (d as { bestScore?: number }).bestScore! > 0)
-            .slice(0, limit),
-        };
-        boardCache.set(cacheKey, cached);
-      }
-      let current = null;
-      if (!dept) {
-        try {
-          const id = await owner(),
-            p = await store.doc(`players/${id}`).get();
-          const personalBest =
-            mode === "classic"
-              ? p.data()?.bestScore
-              : p.data()?.bestScores?.[mode];
-          if (
-            p.exists &&
-            !p.data()!.banned &&
-            typeof personalBest === "number" &&
-            personalBest > 0
-          ) {
-            const rank = await board.above(personalBest).count().get();
-            current = {
-              id,
-              nickname: p.data()!.nickname,
-              department: p.data()!.department,
-              bestScore: personalBest,
-              rank: rank.data().count + 1,
-            };
-          }
-        } catch {}
-      }
+      const key = dept ? "departments" : mode;
+      const snap = await boards.get(store, key, dept, mode);
       return NextResponse.json(
-        { rows: cached.rows, current, updatedAt: cached.at },
-        { headers: { "Cache-Control": "no-store" } },
+        {
+          rows: snap.rows.slice(0, limit),
+          current: null,
+          updatedAt: snap.at,
+          stale: snap.stale || false,
+        },
+        {
+          headers: {
+            // Cached at the edge so many viewers polling share one Firestore read.
+            "Cache-Control": snap.stale
+              ? "public, s-maxage=30, stale-while-revalidate=86400"
+              : "public, s-maxage=60, stale-while-revalidate=86400",
+          },
+        },
+      );
+    }
+    // The player's own row is per-person, so it stays out of the shared board
+    // response; the client asks for it once per visit instead of every poll.
+    if (path === "leaderboard/me" && req.method === "GET") {
+      const mode = req.nextUrl.searchParams.get("game") || "classic";
+      if (!validBoard(mode)) throw Error("Unknown game.");
+      let current = null;
+      try {
+        const id = await owner(),
+          p = await store.doc(`players/${id}`).get();
+        const personalBest =
+          mode === "classic"
+            ? p.data()?.bestScore
+            : p.data()?.bestScores?.[mode];
+        if (
+          p.exists &&
+          !p.data()!.banned &&
+          typeof personalBest === "number" &&
+          personalBest > 0
+        ) {
+          const snap = await boards.get(store, mode, false, mode);
+          const placed = snap.rows.findIndex(
+            (r: { id?: string }) => r.id === id,
+          );
+          current = {
+            id,
+            nickname: p.data()!.nickname,
+            department: p.data()!.department,
+            bestScore: personalBest,
+            // Inside the snapshot the rank is free; below it, one count query.
+            rank:
+              placed >= 0
+                ? placed + 1
+                : (
+                    await playersBy(store, mode)
+                      .above(personalBest)
+                      .count()
+                      .get()
+                  ).data().count + 1,
+          };
+        }
+      } catch {}
+      return NextResponse.json(
+        { current },
+        { headers: { "Cache-Control": "private, no-store" } },
       );
     }
     const b = req.method === "POST" ? await req.json() : {};
@@ -359,8 +329,9 @@ async function handle(
           createdAt: Date.now(),
         });
       });
-      for (const key of boardCache.keys())
-        if (key.startsWith(mode + ":")) boardCache.delete(key);
+      // The shared board is not rebuilt here: doing that on every new best is
+      // what exhausted the read quota. It picks the score up within 90 seconds,
+      // and the player's own rank is returned below straight away.
       const p = await pRef.get();
       const board = playersBy(store, mode);
       const best =

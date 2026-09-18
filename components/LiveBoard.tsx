@@ -13,8 +13,11 @@ type Board = {
   rows: Row[];
   current: (Row & { rank: number }) | null;
   updatedAt: number;
+  stale?: boolean;
 };
-const REFRESH_MS = 15000;
+// The boards are cached for a minute on the server, so polling faster than this
+// only spends Firebase quota without ever showing anything new.
+const REFRESH_MS = 60000;
 
 export default function LiveBoard({
   game = "dash",
@@ -31,34 +34,48 @@ export default function LiveBoard({
 }) {
   const [selected, setSelected] = useState(game);
   const [board, setBoard] = useState<Board | null>(null);
+  const [mine, setMine] = useState<(Row & { rank: number }) | null>(null);
   const [offline, setOffline] = useState(false);
   const [now, setNow] = useState(0);
 
   useEffect(() => setSelected(game), [game]);
   useEffect(() => {
     let active = true;
+    let loaded = false;
     setBoard(null);
+    setMine(null);
     setOffline(false);
     const load = async () => {
       if (document.hidden) return;
       try {
         const r = await fetch(
           `/api/leaderboard?game=${selected}&limit=${limit}`,
-          {
-            cache: "no-store",
-            signal: AbortSignal.timeout(10000),
-          },
+          { signal: AbortSignal.timeout(10000) },
         );
         const data = await r.json();
         if (!r.ok) throw Error(data.error);
         if (active) {
+          loaded = true;
           setBoard(data);
           setOffline(false);
         }
       } catch {
-        if (active) setOffline(true);
+        // A failed refresh leaves the scores already on screen, rather than
+        // blanking the board as it did when Firebase ran out of daily quota.
+        if (active && !loaded) setOffline(true);
       }
     };
+    const loadMine = async () => {
+      try {
+        const r = await fetch(`/api/leaderboard/me?game=${selected}`, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(10000),
+        });
+        const data = await r.json();
+        if (active && r.ok && data.current) setMine(data.current);
+      } catch {}
+    };
+    void loadMine();
     void load();
     const timer = setInterval(load, REFRESH_MS);
     const clock = setInterval(() => setNow(Date.now()), 1000);
@@ -74,7 +91,7 @@ export default function LiveBoard({
   const info = boards.find((b) => b.id === selected) || boards[0];
   const age =
     board && now ? Math.max(0, Math.round((now - board.updatedAt) / 1000)) : 0;
-  const current = board?.current;
+  const current = mine ?? board?.current;
 
   return (
     <section className="live-board" aria-label={`${title}: ${info.name}`}>
@@ -104,8 +121,8 @@ export default function LiveBoard({
       )}
       {offline ? (
         <p className="live-empty">
-          The shared leaderboard is not reachable right now. Your best score is
-          still saved on this device.
+          The board is taking a short break. Every saved score is safe and will
+          be back shortly. Your best score is still on this device.
         </p>
       ) : !board ? (
         <ol className="live-rows" aria-busy="true">
@@ -158,10 +175,12 @@ export default function LiveBoard({
       <footer>
         <span>
           {offline
-            ? "Retrying every 15 seconds"
-            : board
-              ? `Updated ${age < 3 ? "just now" : `${age}s ago`} · refreshes every 15s`
-              : "Loading scores…"}
+            ? "Retrying every minute"
+            : board?.stale
+              ? "Showing the last saved scores · updating again shortly"
+              : board
+                ? `Updated ${age < 60 ? "just now" : `${Math.round(age / 60)} min ago`} · refreshes every minute`
+                : "Loading scores…"}
         </span>
         <Link href={`/leaderboard?game=${selected}`}>Full board →</Link>
       </footer>

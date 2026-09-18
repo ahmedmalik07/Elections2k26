@@ -8,3 +8,6 @@ test-results/
 *service-account*.json
 *firebase-adminsdk*.json
 .vercel/
+
+# Local score backups (may contain player nicknames)
+backups/

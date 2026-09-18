@@ -228,17 +228,21 @@ export default function CampusApp({
   useEffect(() => {
     if (page !== "leaderboard") return;
     let active = true;
+    let loaded = false;
     const load = () => {
       void api("leaderboard?type=" + tab + "&game=" + mode)
         .then((d) => {
           if (active) {
+            loaded = true;
             setRows(d.rows);
-            setCurrent(d.current);
             setError("");
           }
         })
         .catch(() => {
-          if (active) setError("Leaderboard load nahi hua. Refresh karo.");
+          // Only report a problem before any scores are on screen; later
+          // failures keep the last board visible.
+          if (active && !loaded)
+            setError("Leaderboard load nahi hua. Refresh karo.");
         })
         .finally(() => {
           if (active) setLoading(false);
@@ -246,7 +250,17 @@ export default function CampusApp({
     };
     setLoading(true);
     load();
-    const timer = setInterval(load, 15000);
+    // Your own row barely changes, so it is fetched once per visit, not per poll.
+    if (tab === "players")
+      void api("leaderboard/me?game=" + mode)
+        .then((d) => {
+          if (active) setCurrent(d.current);
+        })
+        .catch(() => {});
+    else setCurrent(null);
+    // Matches the server's one-minute board cache; polling faster just spends
+    // Firebase quota.
+    const timer = setInterval(load, 60000);
     return () => {
       active = false;
       clearInterval(timer);
@@ -855,7 +869,7 @@ export default function CampusApp({
             </select>
           </label>
           <p className="live-status">
-            <span className="live-pill">Live</span> Refreshes every 15 seconds
+            <span className="live-pill">Live</span> Refreshes every minute
           </p>
           <p className="board-note">
             Scores compete within the same game. Department totals count
