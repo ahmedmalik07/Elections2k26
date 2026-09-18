@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 import {
   createBoardCache,
   buildBoard,
+  mergeRow,
   withDeadline,
   BOARD_MEMORY_MS,
   BOARD_SNAPSHOT_MS,
+  BOARD_LIMIT,
 } from "../lib/boardCache.mjs";
 
 // A stand-in for Firestore that counts document reads, so the tests can show
@@ -149,6 +151,44 @@ test("zero scores and banned players are left off the board", async () => {
     rows.map((r) => r.nickname),
     ["Top"],
   );
+});
+
+test("a new score slots into the stored board without a rescan", () => {
+  const rows = [
+    { id: "a", nickname: "Ali", bestScore: 900 },
+    { id: "b", nickname: "Sara", bestScore: 500 },
+  ];
+  const climbed = mergeRow(rows, {
+    id: "b",
+    nickname: "Sara",
+    bestScore: 1200,
+  });
+  assert.deepEqual(
+    climbed.map((r) => [r.nickname, r.bestScore]),
+    [
+      ["Sara", 1200],
+      ["Ali", 900],
+    ],
+    "a player moves up instead of appearing twice",
+  );
+
+  const joined = mergeRow(rows, { id: "c", nickname: "New", bestScore: 700 });
+  assert.deepEqual(
+    joined.map((r) => r.nickname),
+    ["Ali", "New", "Sara"],
+  );
+
+  // A board never grows past the published length.
+  const many = Array.from({ length: BOARD_LIMIT }, (_, i) => ({
+    id: `x${i}`,
+    bestScore: 10000 - i,
+  }));
+  assert.equal(mergeRow(many, { id: "last", bestScore: 1 }).length, BOARD_LIMIT);
+  assert.ok(
+    !mergeRow(many, { id: "last", bestScore: 1 }).some((r) => r.id === "last"),
+    "a score below the board does not displace anyone",
+  );
+  assert.deepEqual(mergeRow(rows, { id: "z", bestScore: 0 }), rows);
 });
 
 test("a hung Firestore call gives up quickly", async () => {

@@ -8,11 +8,21 @@ import {
   validatedCards,
 } from "@/lib/validation.mjs";
 import { validBoard } from "@/lib/arcade.mjs";
-import { createBoardCache, playersBy } from "@/lib/boardCache.mjs";
+import { createBoardCache, playersBy, mergeRow } from "@/lib/boardCache.mjs";
 import { campaign } from "@/config/campaign";
 export const runtime = "nodejs";
 // Live boards come from one cached snapshot document; see lib/boardCache.mjs.
 const boards = createBoardCache();
+// After a ban, rename or score deletion the stored boards are wrong, so they
+// are marked for a full rebuild on the next view.
+async function forgetBoards(store: ReturnType<typeof db>) {
+  boards.memory.clear();
+  await Promise.all(
+    ["dash", "easy", "chai", "memory", "classic", "departments"].map((key) =>
+      store.doc(`boards/${key}`).set({ at: 0, rows: [] }),
+    ),
+  );
+}
 async function handle(
   req: NextRequest,
   { params }: { params: Promise<{ path: string[] }> },
@@ -255,11 +265,13 @@ async function handle(
       validateScore(b, Date.now() - session.startedAt, mode);
       const pRef = store.doc(`players/${id}`),
         sRef = store.doc(`sessions/${session.tokenId}`);
+      const boardRef = store.doc(`boards/${mode}`);
       await store.runTransaction(async (tx) => {
-        const [p, s, g] = await Promise.all([
+        const [p, s, g, boardDoc] = await Promise.all([
           tx.get(pRef),
           tx.get(sRef),
           tx.get(store.doc("stats/global")),
+          tx.get(boardRef),
         ]);
         if (
           (mode === "dash" ? s.exists : !s.exists || s.data()!.used) ||
@@ -276,6 +288,25 @@ async function handle(
           throw Error("Hourly limit reached. Baad mein dobara khelo.");
         const safeCards = validatedCards(b, mode);
         const all = [...new Set([...(player.cards || []), ...safeCards])];
+        // Keep the shared board current by editing it here, rather than
+        // rescanning every player when someone loads the leaderboard.
+        const personalBest = Math.max(
+          (mode === "classic" ? player.bestScore : player.bestScores?.[mode]) ||
+            0,
+          b.score,
+        );
+        const saved = boardDoc.data();
+        if (saved?.rows?.length && saved.at > 0)
+          tx.set(boardRef, {
+            at: Date.now(),
+            rows: mergeRow(saved.rows, {
+              id,
+              nickname: player.nickname,
+              department: player.department,
+              cardsCollected: all.length,
+              bestScore: personalBest,
+            }),
+          });
         if (mode === "dash")
           tx.set(sRef, {
             playerId: id,
@@ -394,12 +425,15 @@ async function handle(
       }
       if (typeof b.id !== "string" || !/^[\w-]{1,100}$/.test(b.id))
         throw Error("Invalid record.");
-      if (b.action === "ban")
+      if (b.action === "ban") {
         await store.doc(`players/${b.id}`).update({ banned: true });
-      else if (b.action === "rename")
+        await forgetBoards(store);
+      } else if (b.action === "rename") {
         await store
           .doc(`players/${b.id}`)
           .update({ nickname: validNickname(b.nickname) });
+        await forgetBoards(store);
+      }
       else if (b.action === "delete") {
         const ref = store.doc(`scores/${b.id}`);
         await store.runTransaction(async (tx) => {
@@ -447,6 +481,7 @@ async function handle(
             totalPlays: Math.max(0, (g.data()?.totalPlays || 0) - 1),
           });
         });
+        await forgetBoards(store);
       } else throw Error("Unknown action.");
       return NextResponse.json({ ok: true });
     }
