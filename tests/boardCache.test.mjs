@@ -8,6 +8,7 @@ import {
   BOARD_MEMORY_MS,
   BOARD_SNAPSHOT_MS,
   BOARD_LIMIT,
+  DEPARTMENT_SNAPSHOT_MS,
 } from "../lib/boardCache.mjs";
 
 // A stand-in for Firestore that counts document reads, so the tests can show
@@ -95,6 +96,19 @@ test("the snapshot is rebuilt once it ages out", async () => {
   await cache.get(store, "dash", false, "dash", now + BOARD_SNAPSHOT_MS + 1);
   assert.ok(store.reads > afterBuild + 2, "stale snapshot triggers a rebuild");
   assert.equal(store.writes, 2);
+});
+
+test("the departments board rebuilds sooner than the player boards", async () => {
+  const store = fakeStore({ players: 10 });
+  const cache = createBoardCache();
+  const now = 5_000_000;
+  await cache.get(store, "departments", true, "classic", now);
+  const afterBuild = store.reads;
+  // Half an hour on, the player boards are still fine but departments is not.
+  const later = now + DEPARTMENT_SNAPSHOT_MS + 1;
+  assert.ok(later - now < BOARD_SNAPSHOT_MS, "still fresh for player boards");
+  await cache.get(store, "departments", true, "classic", later);
+  assert.ok(store.reads > afterBuild + 1, "departments was rebuilt");
 });
 
 test("scores stay on screen when Firestore refuses reads", async () => {
