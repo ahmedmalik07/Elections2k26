@@ -197,7 +197,10 @@ test("a new score slots into the stored board without a rescan", () => {
     id: `x${i}`,
     bestScore: 10000 - i,
   }));
-  assert.equal(mergeRow(many, { id: "last", bestScore: 1 }).length, BOARD_LIMIT);
+  assert.equal(
+    mergeRow(many, { id: "last", bestScore: 1 }).length,
+    BOARD_LIMIT,
+  );
   assert.ok(
     !mergeRow(many, { id: "last", bestScore: 1 }).some((r) => r.id === "last"),
     "a score below the board does not displace anyone",

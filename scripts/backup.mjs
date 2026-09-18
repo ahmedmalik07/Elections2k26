@@ -30,7 +30,7 @@ loadEnv();
 if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL) {
   console.error(
     "No Firebase credentials found. Put them in .env.local, or run\n" +
-      "  npm run setup -- \"path/to/service-account.json\" \"https://your-domain\"",
+      '  npm run setup -- "path/to/service-account.json" "https://your-domain"',
   );
   process.exit(1);
 }

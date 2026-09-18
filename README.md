@@ -16,16 +16,33 @@ Create a Firebase project and a Firestore database. In Project settings > Servic
 
 Environment variables:
 
-| Variable | Value |
-| --- | --- |
-| FIREBASE_PROJECT_ID | Firebase project ID |
-| FIREBASE_CLIENT_EMAIL | Service account email |
-| FIREBASE_PRIVATE_KEY | Service account private key with escaped newlines |
-| SESSION_SECRET | Random secret of at least 32 characters |
-| ADMIN_KEY | Separate long random admin password |
-| NEXT_PUBLIC_SITE_URL | http://localhost:3000 locally; https://ahmedmalik.wyibe.com for deployment |
+| Variable              | Value                                                                      |
+| --------------------- | -------------------------------------------------------------------------- |
+| FIREBASE_PROJECT_ID   | Firebase project ID                                                        |
+| FIREBASE_CLIENT_EMAIL | Service account email                                                      |
+| FIREBASE_PRIVATE_KEY  | Service account private key with escaped newlines                          |
+| SESSION_SECRET        | Random secret of at least 32 characters                                    |
+| ADMIN_KEY             | Separate long random admin password                                        |
+| NEXT_PUBLIC_SITE_URL  | http://localhost:3000 locally; https://ahmedmalik.wyibe.com for deployment |
 
 Generate separate secrets with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Never put secrets in a public environment variable or commit `.env.local`.
+
+## Leaderboards and the free quota
+
+Firebase's free plan allows 50,000 reads and 20,000 writes a day, and hitting that limit makes every leaderboard fail until it resets at midnight US Pacific time. Boards are therefore never drawn by reading one document per player. Each board is a single cached snapshot (`lib/boardCache.mjs`): a new best score writes itself into `boards/<mode>`, and a full rescan of the players is only a repair, every three hours or after an admin ban, rename or deletion.
+
+Optionally, and for free, **Upstash Redis** can serve the boards so they no longer depend on the Firebase quota at all. Firestore stays the record of every player and score; Redis holds only what a board needs to be drawn, as one sorted set per game. Reading a board costs 2 Redis commands and saving a score costs 2, against a free allowance of 500,000 a month with no credit card.
+
+To turn it on: create a free database at [upstash.com](https://upstash.com), copy the two REST values into `.env.local` and into Vercel's environment variables, then run `npm run sync:redis` once to copy the existing boards across.
+
+| Variable                 | Value                                                           |
+| ------------------------ | --------------------------------------------------------------- |
+| UPSTASH_REDIS_REST_URL   | `https://....upstash.io`, from the database page under REST API |
+| UPSTASH_REDIS_REST_TOKEN | the matching token on that page                                 |
+
+With these unset, everything runs from Firestore exactly as before. If Upstash is ever unreachable, the boards fall back to Firestore automatically.
+
+`npm run backup` writes every player, score and leaderboard to `backups/`, along with a readable `top-players-*.txt` list for choosing prize winners. That folder is never committed. Run it during voting days so the results exist outside Firebase.
 
 ## Deploy
 

@@ -9,19 +9,32 @@ import {
 } from "@/lib/validation.mjs";
 import { validBoard } from "@/lib/arcade.mjs";
 import { createBoardCache, playersBy, mergeRow } from "@/lib/boardCache.mjs";
+import {
+  redisReady,
+  redisBoard,
+  redisSaveScore,
+  redisReplaceBoard,
+} from "@/lib/redisBoard.mjs";
 import { campaign } from "@/config/campaign";
 export const runtime = "nodejs";
 // Live boards come from one cached snapshot document; see lib/boardCache.mjs.
-const boards = createBoardCache();
+const boards = createBoardCache({
+  redis: { ready: redisReady, board: redisBoard, replace: redisReplaceBoard },
+});
 // After a ban, rename or score deletion the stored boards are wrong, so they
 // are marked for a full rebuild on the next view.
+const BOARD_KEYS = ["dash", "easy", "chai", "memory", "classic"];
 async function forgetBoards(store: ReturnType<typeof db>) {
   boards.memory.clear();
-  await Promise.all(
-    ["dash", "easy", "chai", "memory", "classic", "departments"].map((key) =>
+  await Promise.all([
+    ...[...BOARD_KEYS, "departments"].map((key) =>
       store.doc(`boards/${key}`).set({ at: 0, rows: [] }),
     ),
-  );
+    // Emptying the Redis boards makes the next view rebuild them from Firestore.
+    ...(redisReady()
+      ? BOARD_KEYS.map((key) => redisReplaceBoard(key, []).catch(() => null))
+      : []),
+  ]);
 }
 async function handle(
   req: NextRequest,
@@ -266,6 +279,14 @@ async function handle(
       const pRef = store.doc(`players/${id}`),
         sRef = store.doc(`sessions/${session.tokenId}`);
       const boardRef = store.doc(`boards/${mode}`);
+      // Filled inside the transaction, mirrored to Redis once it has committed.
+      let boardRow: {
+        id: string;
+        nickname: string;
+        department: string;
+        cardsCollected: number;
+        bestScore: number;
+      } | null = null;
       await store.runTransaction(async (tx) => {
         const [p, s, g, boardDoc] = await Promise.all([
           tx.get(pRef),
@@ -295,17 +316,18 @@ async function handle(
             0,
           b.score,
         );
+        boardRow = {
+          id,
+          nickname: player.nickname,
+          department: player.department,
+          cardsCollected: all.length,
+          bestScore: personalBest,
+        };
         const saved = boardDoc.data();
         if (saved?.rows?.length && saved.at > 0)
           tx.set(boardRef, {
             at: Date.now(),
-            rows: mergeRow(saved.rows, {
-              id,
-              nickname: player.nickname,
-              department: player.department,
-              cardsCollected: all.length,
-              bestScore: personalBest,
-            }),
+            rows: mergeRow(saved.rows, boardRow),
           });
         if (mode === "dash")
           tx.set(sRef, {
@@ -360,9 +382,14 @@ async function handle(
           createdAt: Date.now(),
         });
       });
-      // The shared board is not rebuilt here: doing that on every new best is
-      // what exhausted the read quota. It picks the score up within 90 seconds,
-      // and the player's own rank is returned below straight away.
+      // Redis serves the boards, so the new score goes in right away. A failure
+      // here costs nothing: Firestore has the score, and the next rebuild will
+      // put it back on the board.
+      if (boardRow && redisReady())
+        await redisSaveScore(mode, boardRow).catch(() => null);
+      boards.memory.delete(mode);
+      // The full Firestore board is not rebuilt here: doing that on every new
+      // best is what exhausted the read quota.
       const p = await pRef.get();
       const board = playersBy(store, mode);
       const best =
@@ -433,8 +460,7 @@ async function handle(
           .doc(`players/${b.id}`)
           .update({ nickname: validNickname(b.nickname) });
         await forgetBoards(store);
-      }
-      else if (b.action === "delete") {
+      } else if (b.action === "delete") {
         const ref = store.doc(`scores/${b.id}`);
         await store.runTransaction(async (tx) => {
           const s = await tx.get(ref);
