@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { buildBackup, saveCloudBackup } from "../lib/cloudBackup.mjs";
 
 const root = process.cwd();
 const outDir = join(root, "backups");
@@ -44,37 +45,12 @@ if (!getApps().length)
   });
 const store = getFirestore();
 
-const dump = async (name) => {
-  const snap = await store.collection(name).get();
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-};
-
 const backup = {
-  takenAt: new Date().toISOString(),
+  ...(await buildBackup(store)),
   project: process.env.FIREBASE_PROJECT_ID,
-  players: await dump("players"),
-  scores: await dump("scores"),
-  departments: await dump("departments"),
-  stats: await dump("stats"),
 };
-
-const rank = (player, mode) =>
-  mode === "classic" ? player.bestScore || 0 : player.bestScores?.[mode] || 0;
-backup.leaderboards = Object.fromEntries(
-  ["dash", "easy", "chai", "memory", "classic"].map((mode) => [
-    mode,
-    backup.players
-      .filter((p) => !p.banned && rank(p, mode) > 0)
-      .sort((a, b) => rank(b, mode) - rank(a, mode))
-      .slice(0, 50)
-      .map((p, i) => ({
-        rank: i + 1,
-        nickname: p.nickname,
-        department: p.department,
-        score: rank(p, mode),
-      })),
-  ]),
-);
+// Also refresh the cloud copy, if Upstash is configured.
+const cloud = await saveCloudBackup(backup).catch(() => null);
 
 mkdirSync(outDir, { recursive: true });
 const stamp = backup.takenAt.replace(/[:.]/g, "-").slice(0, 19);
@@ -105,5 +81,8 @@ writeFileSync(
 console.log(
   `Saved ${backup.players.length} players and ${backup.scores.length} scores to\n  ${file}\n` +
     `Top players also written to backups/top-players-${stamp}.txt\n` +
-    `${readdirSync(outDir).length} files in backups/ (never committed to git).`,
+    `${readdirSync(outDir).length} files in backups/ (never committed to git).` +
+    (cloud
+      ? `\nCloud copy saved in Upstash as backup:${cloud.day} (kept 30 days).`
+      : ""),
 );

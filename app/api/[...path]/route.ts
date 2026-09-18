@@ -15,6 +15,13 @@ import {
   redisSaveScore,
   redisReplaceBoard,
 } from "@/lib/redisBoard.mjs";
+import {
+  buildBackup,
+  claimBackupSlot,
+  latestCloudBackup,
+  listCloudBackups,
+  saveCloudBackup,
+} from "@/lib/cloudBackup.mjs";
 import { campaign } from "@/config/campaign";
 export const runtime = "nodejs";
 // Live boards come from one cached snapshot document; see lib/boardCache.mjs.
@@ -423,6 +430,27 @@ async function handle(
       });
       return NextResponse.json({ code: c, score: best, mode });
     }
+    // Called once a day by the Vercel cron in vercel.json. It needs no secret:
+    // the Redis slot lets at most one backup run per 20 hours, so repeated
+    // calls cost one Redis command each and no Firestore reads.
+    if (path === "backup/daily" && req.method === "GET") {
+      if (!(await claimBackupSlot()))
+        return NextResponse.json(
+          { ok: true, skipped: "A backup already ran in the last 20 hours." },
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      const backup = await buildBackup(store);
+      const saved = await saveCloudBackup(backup);
+      return NextResponse.json(
+        {
+          ok: true,
+          ...saved,
+          players: backup.players.length,
+          scores: backup.scores.length,
+        },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
     if (path.startsWith("admin")) {
       const supplied =
           req.headers.get("authorization")?.replace(/^Bearer /, "") || "",
@@ -436,6 +464,22 @@ async function handle(
           { error: "Admin key check karo." },
           { status: 401 },
         );
+      // The newest cloud backup, as a file to save.
+      if (path === "admin/backup" && req.method === "GET") {
+        const latest = await latestCloudBackup();
+        if (!latest)
+          return NextResponse.json(
+            { error: "No cloud backup yet.", days: await listCloudBackups() },
+            { status: 404 },
+          );
+        return new NextResponse(latest.body, {
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Disposition": `attachment; filename="jaago-backup-${latest.day}.json"`,
+            "Cache-Control": "no-store",
+          },
+        });
+      }
       if (req.method === "GET") {
         const [stats, scores] = await Promise.all([
           store.doc("stats/global").get(),
