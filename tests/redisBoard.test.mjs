@@ -213,18 +213,23 @@ test("the boards fall back to Firestore when Upstash is unreachable", async () =
   );
 });
 
-test("Redis is preferred over Firestore when it has the board", async () => {
+test("Redis is used without rescanning players, even though its one repair doc is still checked", async () => {
   await redisSaveScore("dash", {
     id: "a",
     nickname: "FromRedis",
     bestScore: 5,
   });
+  let docReads = 0;
   const firestore = {
     doc: () => ({
-      get: async () => assert.fail("Firestore should not have been read"),
+      get: async () => {
+        docReads += 1;
+        return { data: () => undefined }; // no repair doc yet
+      },
       set: async () => {},
     }),
-    collection: () => assert.fail("Firestore should not have been scanned"),
+    collection: () =>
+      assert.fail("a full players scan defeats the point of caching"),
   };
   const cache = createBoardCache({
     redis: {
@@ -236,9 +241,15 @@ test("Redis is preferred over Firestore when it has the board", async () => {
   const snap = await cache.get(firestore, "dash", false, "dash");
   assert.equal(snap.source, "redis");
   assert.equal(snap.rows[0].nickname, "FromRedis");
+  // One single-document read to check for anything Redis might have missed —
+  // cheap, and the only way to repair a race without ever hiding a score.
+  assert.equal(docReads, 1);
 });
 
 test("a missed Redis mirror cannot hide a committed higher score forever", async () => {
+  // Redis has "Old"'s score. Firestore's repair doc, read back a moment later,
+  // has "New winner" — a score whose Redis write raced and lost, or simply
+  // hasn't landed yet. Neither player's score may vanish from what's shown.
   await redisSaveScore("dash", { id: "a", nickname: "Old", bestScore: 900 });
   const latest = [{ id: "b", nickname: "New winner", bestScore: 1200 }];
   let reads = 0;
@@ -254,7 +265,49 @@ test("a missed Redis mirror cannot hide a committed higher score forever", async
     redis: { ready: redisReady, board: redisBoard, replace: redisReplaceBoard },
   });
   const result = await cache.get(store, "dash", false, "dash");
-  assert.deepEqual(result.rows, latest);
+  assert.deepEqual(
+    result.rows.map((r) => r.nickname),
+    ["New winner", "Old"],
+    "both scores are shown, ranked together, instead of one replacing the other",
+  );
   await cache.get(store, "dash", false, "dash");
   assert.equal(reads, 1, "cached viewers do not rescan Firestore players");
+});
+
+test("a player's own live score is never hidden by an older Firestore copy", async () => {
+  // This is the exact shape of the bug: a player sets a new personal best
+  // (written to Redis immediately), but the Firestore repair doc a reader
+  // happens to see a moment later still has that player's OLD score. The
+  // player's new, higher score must win — not disappear.
+  await redisSaveScore("dash", {
+    id: "friend",
+    nickname: "Friend",
+    bestScore: 999999,
+  });
+  const staleFirestoreCopy = [
+    { id: "friend", nickname: "Friend", bestScore: 40000 },
+    { id: "other", nickname: "Other", bestScore: 50000 },
+  ];
+  const store = {
+    doc: () => ({
+      get: async () => ({
+        data: () => ({ at: 500, rows: staleFirestoreCopy }),
+      }),
+    }),
+  };
+  const cache = createBoardCache({
+    redis: { ready: redisReady, board: redisBoard, replace: redisReplaceBoard },
+  });
+  const result = await cache.get(store, "dash", false, "dash");
+  const friend = result.rows.find((r) => r.id === "friend");
+  assert.equal(
+    friend.bestScore,
+    999999,
+    "the friend's live top score is kept, not overwritten by the stale copy",
+  );
+  assert.equal(result.rows[0].id, "friend", "and they still rank first");
+  assert.ok(
+    result.rows.some((r) => r.id === "other"),
+    "a player only present in the Firestore copy is not dropped either",
+  );
 });

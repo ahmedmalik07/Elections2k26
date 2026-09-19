@@ -4,6 +4,7 @@ import {
   createBoardCache,
   buildBoard,
   mergeRow,
+  mergeBoards,
   withDeadline,
   BOARD_MEMORY_MS,
   BOARD_SNAPSHOT_MS,
@@ -206,6 +207,38 @@ test("a new score slots into the stored board without a rescan", () => {
     "a score below the board does not displace anyone",
   );
   assert.deepEqual(mergeRow(rows, { id: "z", bestScore: 0 }), rows);
+});
+
+test("mergeBoards keeps the higher score per player from either side", () => {
+  const firestoreCopy = [
+    { id: "a", nickname: "Ali", bestScore: 500 }, // stale: behind redis
+    { id: "c", nickname: "Only in Firestore", bestScore: 300 },
+  ];
+  const redisCopy = [
+    { id: "a", nickname: "Ali", bestScore: 900 }, // fresher: ahead of firestore
+    { id: "b", nickname: "Only in Redis", bestScore: 700 },
+  ];
+  const merged = mergeBoards(firestoreCopy, redisCopy);
+  assert.deepEqual(
+    merged.map((r) => [r.id, r.bestScore]),
+    [
+      ["a", 900],
+      ["b", 700],
+      ["c", 300],
+    ],
+    "the higher of the two scores wins per player, and nobody unique to either side is dropped",
+  );
+});
+
+test("mergeBoards never lets either side's score go backwards", () => {
+  // Order must not matter: the same two lists merged either way produce the
+  // same result, and no player's best score is ever lower than in either input.
+  const x = [{ id: "p", bestScore: 42 }];
+  const y = [{ id: "p", bestScore: 41 }];
+  assert.deepEqual(mergeBoards(x, y), mergeBoards(y, x));
+  assert.equal(mergeBoards(x, y)[0].bestScore, 42);
+  assert.deepEqual(mergeBoards([], []), []);
+  assert.deepEqual(mergeBoards(null, undefined), []);
 });
 
 test("a hung Firestore call gives up quickly", async () => {
