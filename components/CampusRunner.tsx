@@ -52,7 +52,13 @@ async function post(path: string, body: unknown) {
     signal: AbortSignal.timeout(10000),
   });
   const data = await r.json();
-  if (!r.ok) throw Error(data.error);
+  if (!r.ok) {
+    const error: Error & { status?: number } = Error(data.error);
+    // 4xx is the server's verdict on this run and will never change; 5xx and a
+    // dropped connection are worth retrying. The queue needs to tell them apart.
+    error.status = r.status;
+    throw error;
+  }
   return data;
 }
 function readJson<T>(key: string, fallback: T): T {
@@ -283,10 +289,25 @@ export default function CampusRunner() {
           return await submit(true);
         } catch {}
       }
+      const status = (e as Error & { status?: number }).status;
+      // A run the server refuses outright can never succeed on retry, and it
+      // outranks every later run in the queue -- left in, it would block this
+      // player's next scores from ever reaching the board. Drop it and move on.
+      const refused = status !== undefined && status >= 400 && status < 500;
+      if (refused) {
+        const remaining = acknowledgeScore(
+          readJson(PENDING_SCORES_KEY, []),
+          body.token,
+        );
+        writeJson(PENDING_SCORES_KEY, remaining);
+        pending.current = nextPendingScore(remaining);
+        setUnsentScore(Number(pending.current?.score || 0));
+      }
       setClaim("failed");
       setSaveError(
         (e as Error).message || "Connection interrupted. Please retry.",
       );
+      if (refused && pending.current) setTimeout(() => void submit(), 500);
     } finally {
       submitting.current = false;
     }

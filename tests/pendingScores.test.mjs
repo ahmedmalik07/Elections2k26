@@ -27,3 +27,25 @@ test("retries deduplicate by token, not by score or nickname", () => {
   assert.equal(queue.length, 1);
   assert.equal(acknowledgeScore(queue, "another").length, 1);
 });
+
+// The queue always uploads the highest score first. If the server refuses one
+// outright (a 4xx verdict that retrying can never change), leaving it in place
+// would starve every later run that player earns, because it outranks them all.
+test("a refused run is dropped so it cannot block this player's later scores", () => {
+  let queue = enqueueScore([], { token: "refused", score: 5000000 });
+  queue = enqueueScore(queue, { token: "good", score: 120000 });
+  assert.equal(
+    nextPendingScore(queue).token,
+    "refused",
+    "the highest queued run is tried first",
+  );
+  // The server answers 4xx: drop it rather than retrying it forever.
+  queue = acknowledgeScore(queue, "refused");
+  assert.equal(
+    nextPendingScore(queue).token,
+    "good",
+    "the next honest run is now free to upload",
+  );
+  assert.equal(queue.length, 1);
+  assert.equal(nextPendingScore(acknowledgeScore(queue, "good")), null);
+});

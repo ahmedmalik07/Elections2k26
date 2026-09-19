@@ -75,3 +75,29 @@ test("long endless runs and delayed uploads keep their earned scores", () => {
   );
   assert.throws(() => validateScore(long, 32 * 86400000, "dash"));
 });
+
+// A real run that was refused by the old 30-minute cap and lost: 1,001,245
+// points over 101,720 m with 6,416 votes, which needs ~39 minutes of play.
+// The player saw "Couldn't reach the leaderboard" and the score never existed
+// on the server. Nothing may ever reject an honest endurance run again.
+test("the 1,001,245 endurance run that was rejected before is accepted", () => {
+  const distance = 101720;
+  const votes = 6416;
+  const score = 1001245;
+  // Speed ramps 22 -> 44 m/s over the first 110s, so this far takes ~39 min.
+  const seconds = (distance + 1210) / 44;
+  const durationMs = Math.round(seconds * 1000);
+  const millionRun = {
+    ...run,
+    score,
+    votes,
+    points: score - distance,
+    collabs: 100,
+    distance,
+    durationMs,
+  };
+  assert.ok(seconds / 60 > 30, "this run is longer than the old 30-minute cap");
+  assert.equal(validateScore(millionRun, durationMs + 500, "dash"), true);
+  // And still accepted when the phone only gets to upload it hours later.
+  assert.equal(validateScore(millionRun, 6 * 3600000, "dash"), true);
+});
