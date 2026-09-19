@@ -277,6 +277,37 @@ async function handle(
         token: sign({ kind: "round", tokenId, playerId, startedAt, mode }),
       });
     }
+    // A run finished before the 30-minute cap was lifted was refused by the
+    // server and never stored, but the device still remembers the number. It
+    // has no signed proof, so it cannot be trusted onto the board directly:
+    // it is filed for the campaign owner to approve or reject by hand.
+    if (path === "claim" && req.method === "POST") {
+      const id = await owner();
+      const mode = b.mode || "dash";
+      if (!validBoard(mode)) throw Error("Unknown game.");
+      const score = Number(b.score);
+      if (!Number.isSafeInteger(score) || score <= 0 || score > 100000000)
+        throw Error("Invalid score.");
+      const p = await store.doc(`players/${id}`).get();
+      if (!p.exists || p.data()!.banned) throw Error("Player unavailable.");
+      const onBoard =
+        (mode === "classic"
+          ? p.data()!.bestScore
+          : p.data()!.bestScores?.[mode]) || 0;
+      if (score <= onBoard)
+        return NextResponse.json({ ok: true, alreadyCounted: true });
+      await store.doc(`claims/${id}_${mode}`).set({
+        playerId: id,
+        nickname: p.data()!.nickname,
+        department: p.data()!.department,
+        mode,
+        score,
+        onBoard,
+        status: "pending",
+        createdAt: Date.now(),
+      });
+      return NextResponse.json({ ok: true, pending: true, score });
+    }
     if (path === "score" && req.method === "POST") {
       const session = verify(b.token),
         id = await owner();
@@ -532,21 +563,68 @@ async function handle(
         });
       }
       if (req.method === "GET") {
-        const [stats, scores] = await Promise.all([
+        const [stats, scores, claims] = await Promise.all([
           store.doc("stats/global").get(),
           store
             .collection("scores")
             .orderBy("createdAt", "desc")
             .limit(30)
             .get(),
+          store.collection("claims").where("status", "==", "pending").get(),
         ]);
         return NextResponse.json({
           stats: stats.data(),
           scores: scores.docs.map((d) => ({ id: d.id, ...d.data() })),
+          claims: claims.docs.map((d) => ({ id: d.id, ...d.data() })),
         });
       }
       if (typeof b.id !== "string" || !/^[\w-]{1,100}$/.test(b.id))
         throw Error("Invalid record.");
+      // Approving a recovered device score is the one way a score reaches the
+      // board without a signed run, so it is deliberately a manual decision.
+      if (b.action === "approveClaim" || b.action === "rejectClaim") {
+        const ref = store.doc(`claims/${b.id}`);
+        const claim = (await ref.get()).data();
+        if (!claim) throw Error("Claim not found.");
+        if (b.action === "rejectClaim") {
+          await ref.set({ ...claim, status: "rejected", closedAt: Date.now() });
+          return NextResponse.json({ ok: true, rejected: true });
+        }
+        const mode = claim.mode || "dash";
+        const pRef = store.doc(`players/${claim.playerId}`);
+        const row = await store.runTransaction(async (tx) => {
+          const p = await tx.get(pRef);
+          if (!p.exists) throw Error("Player not found.");
+          const player = p.data()!;
+          const best = Math.max(
+            (mode === "classic"
+              ? player.bestScore
+              : player.bestScores?.[mode]) || 0,
+            claim.score,
+          );
+          tx.update(pRef, {
+            bestScore: mode === "classic" ? best : player.bestScore,
+            bestScores: { ...(player.bestScores || {}), [mode]: best },
+            updatedAt: Date.now(),
+            // Recorded so an approved score is always distinguishable later.
+            creditedClaims: [
+              ...(player.creditedClaims || []),
+              { mode, score: claim.score, at: Date.now() },
+            ],
+          });
+          tx.set(ref, { ...claim, status: "approved", closedAt: Date.now() });
+          return {
+            id: claim.playerId,
+            nickname: player.nickname,
+            department: player.department,
+            cardsCollected: player.cardsCollected || 0,
+            bestScore: best,
+          };
+        });
+        if (redisReady()) await redisSaveScore(mode, row).catch(() => null);
+        await forgetBoards(store);
+        return NextResponse.json({ ok: true, approved: true, row });
+      }
       if (b.action === "ban") {
         await store.doc(`players/${b.id}`).update({ banned: true });
         await forgetBoards(store);

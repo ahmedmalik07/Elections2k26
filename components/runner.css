@@ -1063,3 +1063,31 @@
   text-align: left;
   padding: 4px 0;
 }
+
+/* Recovering a best score this device kept when the old site refused the run. */
+.runner-recover {
+  margin: 10px 0 0;
+  padding: 12px;
+  border: 3px solid var(--ink, #10214a);
+  border-radius: 14px;
+  background: #fff6d8;
+  text-align: center;
+}
+.runner-recover p {
+  margin: 0 0 8px;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+.runner-recover button {
+  width: 100%;
+  padding: 10px 14px;
+  border: 3px solid var(--ink, #10214a);
+  border-radius: 12px;
+  background: #ffd23f;
+  font-weight: 800;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.runner-recover button[disabled] {
+  opacity: 0.6;
+}

@@ -178,6 +178,12 @@ export default function CampusRunner() {
     null,
   );
   const [boardKey, setBoardKey] = useState(0);
+  // A best this device remembers from before the 30-minute cap was lifted: the
+  // run was refused and never stored, so only the number survives here.
+  const [orphanBest, setOrphanBest] = useState(0);
+  const [recovery, setRecovery] = useState<
+    "idle" | "sending" | "sent" | "failed"
+  >("idle");
   const [sheet, setSheet] = useState(false);
   const [nickname, setNickname] = useState("");
   const [department, setDepartment] = useState(campaign.departments[0]);
@@ -344,6 +350,27 @@ export default function CampusRunner() {
     if (savedPlayer()) await submit();
     else setClaim("ask");
   }
+  // Sends the number this device remembers. It carries no signed run, so the
+  // server files it for the campaign owner to approve rather than publishing it.
+  async function recoverDeviceBest() {
+    if (!savedPlayer()) {
+      setSheet(true);
+      return;
+    }
+    setRecovery("sending");
+    try {
+      const result = await post("claim", { mode: "dash", score: orphanBest });
+      writeJson("campus-dash-recovered", true);
+      setRecovery("sent");
+      if (result.alreadyCounted) {
+        boardBest.current = Math.max(boardBest.current, orphanBest);
+        writeJson("campus-dash-board-best", boardBest.current);
+      }
+    } catch (e) {
+      setRecovery("failed");
+      setSaveError((e as Error).message || "Could not send. Try again.");
+    }
+  }
   async function register(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -397,6 +424,14 @@ export default function CampusRunner() {
       setBest(saved);
     }
     boardBest.current = Number(readJson("campus-dash-board-best", 0)) || 0;
+    // Nothing queued to retry, yet this device's best never reached the board:
+    // that run was refused before the cap was lifted. Offer to recover it.
+    if (
+      saved > boardBest.current &&
+      !nextPendingScore(readJson(PENDING_SCORES_KEY, [])) &&
+      !readJson("campus-dash-recovered", false)
+    )
+      setOrphanBest(saved);
     unlockedRef.current = readJson<string[]>("campus-dash-achievements", []);
     setUnlocked(unlockedRef.current);
     runsRef.current = Number(readJson("campus-dash-runs", 0)) || 0;
@@ -1073,6 +1108,34 @@ export default function CampusRunner() {
                           New best! Put it on the live leaderboard ↗
                         </button>
                       )}
+                      {(phase === "over" || phase === "ready") &&
+                        orphanBest > 0 && (
+                          <div className="runner-recover" role="status">
+                            {recovery === "sent" ? (
+                              <p>
+                                Sent for review. Your{" "}
+                                {orphanBest.toLocaleString()} goes on the board
+                                once Ahmed confirms it.
+                              </p>
+                            ) : (
+                              <>
+                                <p>
+                                  This device remembers{" "}
+                                  <b>{orphanBest.toLocaleString()}</b> from a
+                                  run the old site refused to save.
+                                </p>
+                                <button
+                                  onClick={recoverDeviceBest}
+                                  disabled={recovery === "sending"}
+                                >
+                                  {recovery === "sending"
+                                    ? "Sending…"
+                                    : "Recover this score →"}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )}
                       {phase === "over" &&
                         claim !== "idle" &&
                         claim !== "ask" && (

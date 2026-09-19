@@ -12,7 +12,8 @@
     "smoke": "node scripts/smoke.mjs",
     "backup": "node scripts/backup.mjs",
     "sync:redis": "node scripts/syncRedis.mjs",
-    "restore": "node scripts/restore.mjs"
+    "restore": "node scripts/restore.mjs",
+    "claims": "node scripts/claims.mjs"
   },
   "dependencies": {
     "firebase-admin": "^13.4.0",
