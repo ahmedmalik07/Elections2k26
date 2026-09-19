@@ -1,5 +1,7 @@
 # Verification record
 
+Campus Dash supports a continuous run of up to 24 hours, and scores have no fixed ceiling; the permitted score scales with verified play time.
+
 ## Verified locally
 
 - Production build passed with 123 kB first-load JavaScript. All 14 automated tests passed. Dependency audit found zero vulnerabilities.
