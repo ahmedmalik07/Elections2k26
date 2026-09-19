@@ -114,7 +114,11 @@ async function handle(
         {
           rows: snap.rows.slice(0, limit),
           current: null,
+          // `updatedAt` is the last completed run saved to this game board;
+          // `checkedAt` is when this response was generated. They are not the
+          // same thing and should never be presented as if they were.
           updatedAt: snap.at,
+          checkedAt: Date.now(),
           stale: snap.stale || false,
         },
         {

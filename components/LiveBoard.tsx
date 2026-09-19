@@ -13,6 +13,7 @@ type Board = {
   rows: Row[];
   current: (Row & { rank: number }) | null;
   updatedAt: number;
+  checkedAt: number;
   stale?: boolean;
 };
 // The boards are cached for a minute on the server, so polling faster than this
@@ -179,7 +180,7 @@ export default function LiveBoard({
             : board?.stale
               ? "Showing the last saved scores · updating again shortly"
               : board
-                ? `Updated ${age < 60 ? "just now" : `${Math.round(age / 60)} min ago`} · refreshes every minute`
+                ? `Last saved score ${age < 60 ? "just now" : `${Math.round(age / 60)} min ago`} · checking live every minute · runs appear when they end`
                 : "Loading scores…"}
         </span>
         <Link href={`/leaderboard?game=${selected}`}>Full board →</Link>
