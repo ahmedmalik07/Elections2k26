@@ -237,3 +237,24 @@ test("Redis is preferred over Firestore when it has the board", async () => {
   assert.equal(snap.source, "redis");
   assert.equal(snap.rows[0].nickname, "FromRedis");
 });
+
+test("a missed Redis mirror cannot hide a committed higher score forever", async () => {
+  await redisSaveScore("dash", { id: "a", nickname: "Old", bestScore: 900 });
+  const latest = [{ id: "b", nickname: "New winner", bestScore: 1200 }];
+  let reads = 0;
+  const store = {
+    doc: () => ({
+      get: async () => {
+        reads++;
+        return { data: () => ({ at: 123, rows: latest }) };
+      },
+    }),
+  };
+  const cache = createBoardCache({
+    redis: { ready: redisReady, board: redisBoard, replace: redisReplaceBoard },
+  });
+  const result = await cache.get(store, "dash", false, "dash");
+  assert.deepEqual(result.rows, latest);
+  await cache.get(store, "dash", false, "dash");
+  assert.equal(reads, 1, "cached viewers do not rescan Firestore players");
+});

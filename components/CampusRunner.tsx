@@ -37,6 +37,12 @@ import Brand from "./Brand";
 import { createRunnerAudio } from "./runnerAudio";
 import { C, drawScene, type Item, type Phase, type Run } from "./runnerScene";
 import "./runner.css";
+import {
+  PENDING_SCORES_KEY,
+  enqueueScore,
+  acknowledgeScore,
+  nextPendingScore,
+} from "@/lib/pendingScores.mjs";
 
 async function post(path: string, body: unknown) {
   const r = await fetch("/api/" + path, {
@@ -155,6 +161,9 @@ export default function CampusRunner() {
   // Leaderboard: each run gets a signed token; only new personal bests are submitted.
   const token = useRef<Promise<string | null>>(Promise.resolve(null));
   const pending = useRef<Record<string, unknown> | null>(null);
+  const submitting = useRef(false);
+  const [saveError, setSaveError] = useState("");
+  const [unsentScore, setUnsentScore] = useState(0);
   const boardBest = useRef(0);
   const [claim, setClaim] = useState<
     "idle" | "ask" | "saving" | "saved" | "failed"
@@ -202,7 +211,6 @@ export default function CampusRunner() {
     setClaim("idle");
     setRank(null);
     setNewThisRun([]);
-    pending.current = null;
     audio.current?.unlock();
     token.current = post("session/start", { mode: "dash" })
       .then((d) => d.token as string)
@@ -244,34 +252,49 @@ export default function CampusRunner() {
     writeJson("campus-dash-brainrot", next);
   }
   async function submit(retried = false): Promise<void> {
-    const body = pending.current;
+    if (submitting.current && !retried) return;
+    const body =
+      nextPendingScore(readJson(PENDING_SCORES_KEY, [])) || pending.current;
     if (!body) return;
+    submitting.current = true;
     setClaim("saving");
     try {
       const saved = await post("score", body);
-      pending.current = null;
+      const remaining = acknowledgeScore(
+        readJson(PENDING_SCORES_KEY, []),
+        body.token,
+      );
+      writeJson(PENDING_SCORES_KEY, remaining);
+      pending.current = nextPendingScore(remaining);
+      setUnsentScore(Number(pending.current?.score || 0));
+      setSaveError("");
       boardBest.current = Math.max(boardBest.current, Number(body.score));
       writeJson("campus-dash-board-best", boardBest.current);
       setRank(saved);
       setClaim("saved");
       setBoardKey((k) => k + 1);
+      if (remaining.length) setTimeout(() => void submit(), 500);
     } catch (e) {
       const player = savedPlayer();
       // The player cookie can expire while the nickname is still on this device.
       if (!retried && player && /nickname|player/i.test((e as Error).message)) {
         try {
           await post("player", player);
-          return submit(true);
+          return await submit(true);
         } catch {}
       }
       setClaim("failed");
+      setSaveError(
+        (e as Error).message || "Connection interrupted. Please retry.",
+      );
+    } finally {
+      submitting.current = false;
     }
   }
   async function endRun(s: Run, final: number) {
-    const runToken = await token.current;
-    if (!runToken || final <= 0) return;
-    pending.current = {
-      token: runToken,
+    // Capture this run before awaiting: an immediate replay replaces state/token.
+    const tokenPromise = token.current;
+    const body = {
       mode: "dash",
       score: final,
       votes: s.votes,
@@ -280,6 +303,23 @@ export default function CampusRunner() {
       distance: Math.floor(s.distance),
       durationMs: Math.round(s.time * 1000),
     };
+    const runToken = await tokenPromise;
+    if (!runToken || final <= 0) {
+      if (final > 0) {
+        setClaim("failed");
+        setSaveError(
+          "This run started offline and has no signed session. It is saved only on this device.",
+        );
+      }
+      return;
+    }
+    const queued = enqueueScore(readJson(PENDING_SCORES_KEY, []), {
+      ...body,
+      token: runToken,
+    });
+    writeJson(PENDING_SCORES_KEY, queued);
+    pending.current = nextPendingScore(queued);
+    setUnsentScore(Number(pending.current?.score || 0));
     if (savedPlayer()) await submit();
     else setClaim("ask");
   }
@@ -302,6 +342,22 @@ export default function CampusRunner() {
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    const retry = () => {
+      pending.current = nextPendingScore(readJson(PENDING_SCORES_KEY, []));
+      setUnsentScore(Number(pending.current?.score || 0));
+      if (pending.current && savedPlayer()) void submit();
+      else if (pending.current) setClaim("ask");
+    };
+    retry();
+    window.addEventListener("online", retry);
+    const interval = setInterval(retry, 60000);
+    return () => {
+      window.removeEventListener("online", retry);
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     audio.current = createRunnerAudio();
@@ -808,6 +864,25 @@ export default function CampusRunner() {
               </span>
             </Link>
             <section className="runner-machine" aria-label="Campus Dash game">
+              {unsentScore > 0 && (
+                <div className="runner-pending" role="status">
+                  <strong>
+                    {unsentScore.toLocaleString()} points waiting to upload
+                  </strong>
+                  <span>
+                    {saveError ||
+                      "Your completed run is kept on this device until the server confirms it."}
+                  </span>
+                  <button
+                    disabled={claim === "saving"}
+                    onClick={() =>
+                      savedPlayer() ? void submit() : setSheet(true)
+                    }
+                  >
+                    {claim === "saving" ? "Saving…" : "Retry saving score"}
+                  </button>
+                </div>
+              )}
               <div className="runner-patti small" aria-hidden="true" />
               <div className="runner-hud">
                 <div>
@@ -986,9 +1061,12 @@ export default function CampusRunner() {
                           >
                             {claim === "saving"
                               ? "Saving to the live leaderboard…"
-                              : claim === "saved" && rank
-                                ? `You’re #${rank.rank} of ${rank.total} on the live leaderboard!`
-                                : "Couldn’t reach the leaderboard. Your best is saved on this device."}
+                              : claim === "saved"
+                                ? rank?.rank
+                                  ? `Saved! You’re #${rank.rank} of ${rank.total}. The public board updates within two minutes.`
+                                  : "Score saved. Ranking is temporarily unavailable."
+                                : saveError ||
+                                  "Upload pending. Your completed run is kept on this device for retry."}
                           </p>
                         )}
                       <div className="runner-actions">
@@ -1122,7 +1200,7 @@ export default function CampusRunner() {
               ×
             </button>
             <span className="section-number">
-              {score.toLocaleString()} points, waiting to be saved
+              {unsentScore.toLocaleString()} points, waiting to be saved
             </span>
             <h2>Leaderboard pe naam kya likhein?</h2>
             <label>

@@ -52,3 +52,19 @@ test("campus dash runs are checked against speed, spawn and scoring limits", () 
   );
   assert.throws(() => validateScore(run, 10000, "dash"));
 });
+
+test("long endless runs and delayed uploads keep their earned scores", () => {
+  const long = {
+    ...run,
+    durationMs: 3600000,
+    distance: 140000,
+    votes: 6000,
+    points: 750000,
+    collabs: 30,
+    score: 890000,
+  };
+  assert.equal(validateScore(long, 3601000, "dash"), true);
+  assert.equal(validateScore(long, 86400000, "dash"), true);
+  assert.throws(() => validateScore(long, 1000, "dash"));
+  assert.throws(() => validateScore(long, 8 * 86400000, "dash"));
+});

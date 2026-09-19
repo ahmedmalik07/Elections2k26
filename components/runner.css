@@ -1048,3 +1048,18 @@
   background: var(--r-pink);
   color: #fff;
 }
+.runner-pending {
+  padding: 12px 16px;
+  background: #fff1c9;
+  color: #17233c;
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.runner-pending button {
+  text-decoration: underline;
+  font-weight: 700;
+  text-align: left;
+  padding: 4px 0;
+}

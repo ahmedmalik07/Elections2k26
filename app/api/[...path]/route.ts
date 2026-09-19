@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual, createHash } from "node:crypto";
 import { db, owner, sign, verify, code, getChallenge } from "@/lib/server";
 import {
   validNickname,
@@ -121,8 +121,8 @@ async function handle(
           headers: {
             // Cached at the edge so many viewers polling share one Firestore read.
             "Cache-Control": snap.stale
-              ? "public, s-maxage=30, stale-while-revalidate=86400"
-              : "public, s-maxage=60, stale-while-revalidate=86400",
+              ? "public, s-maxage=30, stale-while-revalidate=60"
+              : "public, s-maxage=30, stale-while-revalidate=60",
           },
         },
       );
@@ -286,6 +286,30 @@ async function handle(
       const pRef = store.doc(`players/${id}`),
         sRef = store.doc(`sessions/${session.tokenId}`);
       const boardRef = store.doc(`boards/${mode}`);
+      const receipt = createHash("sha256")
+        .update(
+          JSON.stringify([
+            id,
+            mode,
+            ...[
+              "score",
+              "durationMs",
+              "distance",
+              "votes",
+              "points",
+              "collabs",
+              "woken",
+              "pops",
+              "pairs",
+              "hits",
+              "mistakes",
+              "maxCombo",
+              "powerupsUsed",
+              "earlyEnd",
+            ].map((k) => b[k] ?? null),
+          ]),
+        )
+        .digest("hex");
       // Filled inside the transaction, mirrored to Redis once it has committed.
       let boardRow: {
         id: string;
@@ -301,6 +325,20 @@ async function handle(
           tx.get(store.doc("stats/global")),
           tx.get(boardRef),
         ]);
+        if (s.data()?.receipt === receipt && p.exists && !p.data()!.banned) {
+          const player = p.data()!;
+          boardRow = {
+            id,
+            nickname: player.nickname,
+            department: player.department,
+            cardsCollected: player.cardsCollected || 0,
+            bestScore:
+              mode === "classic"
+                ? player.bestScore
+                : player.bestScores?.[mode] || 0,
+          };
+          return; // A lost HTTP response must not turn a committed score into a failure.
+        }
         if (
           (mode === "dash" ? s.exists : !s.exists || s.data()!.used) ||
           !p.exists ||
@@ -331,19 +369,20 @@ async function handle(
           bestScore: personalBest,
         };
         const saved = boardDoc.data();
-        if (saved?.rows?.length && saved.at > 0)
-          tx.set(boardRef, {
-            at: Date.now(),
-            rows: mergeRow(saved.rows, boardRow),
-          });
+        tx.set(boardRef, {
+          // A missing snapshot needs one complete rebuild, not a partial board.
+          at: saved?.at > 0 ? Date.now() : 0,
+          rows: mergeRow(saved?.rows || [], boardRow),
+        });
         if (mode === "dash")
           tx.set(sRef, {
             playerId: id,
             startedAt: session.startedAt,
             used: true,
             mode,
+            receipt,
           });
-        else tx.update(sRef, { used: true });
+        else tx.update(sRef, { used: true, receipt });
         tx.update(pRef, {
           bestScore:
             mode === "classic"
@@ -371,13 +410,15 @@ async function handle(
           totalPlays: (g.data()?.totalPlays || 0) + 1,
           totalWoken: (g.data()?.totalWoken || 0) + (b.woken || 0),
         });
-        tx.set(store.collection("scores").doc(), {
+        tx.set(store.collection("scores").doc(session.tokenId), {
           playerId: id,
           mode,
           hits: b.hits || 0,
           pairs: b.pairs || 0,
           votes: b.votes || 0,
           distance: b.distance || 0,
+          points: b.points || 0,
+          collabs: b.collabs || 0,
           mistakes: b.mistakes || 0,
           score: b.score,
           woken: b.woken || 0,
@@ -397,18 +438,24 @@ async function handle(
       boards.memory.delete(mode);
       // The full Firestore board is not rebuilt here: doing that on every new
       // best is what exhausted the read quota.
-      const p = await pRef.get();
-      const board = playersBy(store, mode);
-      const best =
-        mode === "classic" ? p.data()!.bestScore : p.data()!.bestScores[mode];
-      const [rank, total] = await Promise.all([
-        board.above(best).count().get(),
-        board.ranked().count().get(),
-      ]);
-      return NextResponse.json({
-        rank: rank.data().count + 1,
-        total: total.data().count,
-      });
+      try {
+        const p = await pRef.get();
+        const board = playersBy(store, mode);
+        const best =
+          mode === "classic" ? p.data()!.bestScore : p.data()!.bestScores[mode];
+        const [rank, total] = await Promise.all([
+          board.above(best).count().get(),
+          board.ranked().count().get(),
+        ]);
+        return NextResponse.json({
+          saved: true,
+          rank: rank.data().count + 1,
+          total: total.data().count,
+        });
+      } catch {
+        // Ranking is optional; the transaction above already saved this run.
+        return NextResponse.json({ saved: true, rank: null, total: null });
+      }
     }
     if (path === "challenge" && req.method === "POST") {
       const mode = b.mode || "classic";
