@@ -230,7 +230,7 @@ export default function CampusApp({
     let active = true;
     let loaded = false;
     const load = () => {
-      void api("leaderboard?type=" + tab + "&game=" + mode)
+      void api("leaderboard?type=" + tab + "&game=" + mode + "&limit=250")
         .then((d) => {
           if (active) {
             loaded = true;
@@ -872,8 +872,8 @@ export default function CampusApp({
             <span className="live-pill">Live</span> Refreshes every minute
           </p>
           <p className="board-note">
-            Scores compete within the same game. Department totals count
-            students woken in campus rounds.
+            Showing up to 250 players per game. Scores compete within the same
+            game; department totals count students woken in campus rounds.
           </p>
           <div className="tabs">
             {["players", "departments"].map((t) => (

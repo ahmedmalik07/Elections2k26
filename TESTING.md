@@ -2,6 +2,8 @@
 
 Campus Dash supports a continuous run of up to 24 hours, and scores have no fixed ceiling; the permitted score scales with verified play time.
 
+Full leaderboards retain up to 250 players per game, while the compact homepage cards request only their top 5 or 10. Redis and the Firestore fallback snapshot are seeded together by `npm run sync:redis`.
+
 ## Verified locally
 
 - Production build passed with 123 kB first-load JavaScript. All 14 automated tests passed. Dependency audit found zero vulnerabilities.

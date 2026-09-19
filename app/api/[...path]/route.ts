@@ -105,8 +105,8 @@ async function handle(
       const mode = req.nextUrl.searchParams.get("game") || "classic";
       if (!validBoard(mode)) throw Error("Unknown game.");
       const limit = Math.min(
-        50,
-        Math.max(1, Number(req.nextUrl.searchParams.get("limit")) || 50),
+        250,
+        Math.max(1, Number(req.nextUrl.searchParams.get("limit")) || 250),
       );
       const key = dept ? "departments" : mode;
       const snap = await boards.get(store, key, dept, mode);

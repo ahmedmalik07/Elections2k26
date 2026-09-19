@@ -4,7 +4,7 @@ The homepage now opens directly into **Campus Dash**, an original three-lane run
 
 A mobile arcade for Ahmed Malik's independent student VP campaign, with a GDGOC/CS theme and his supplied portrait. Start with **[LAUNCH.md](LAUNCH.md)** for the step-by-step guide to Firebase, GitHub, Vercel and the custom domain.
 
-Four choices: **Chill Campus** (easy cloud popping, no early loss), **Chai & Code** (30-second one-tap game), **Dev Match** (six pairs of HTML/CSS/JS/Git/API/CLI cards), and **Bore Buster** (the original 45-second challenge). Every game has its own server leaderboard and device best score. All campus art and game icons are code-drawn; the candidate photo is supplied by Ahmed. Playable locally without Firebase; shared scores, challenges, totals and admin require Firebase.
+Four choices: **Chill Campus** (easy cloud popping, no early loss), **Chai & Code** (30-second one-tap game), **Dev Match** (six pairs of HTML/CSS/JS/Git/API/CLI cards), and **Bore Buster** (the original 45-second challenge). Every game has its own server leaderboard and device best score. Full leaderboards retain up to 250 ranked players per game; compact cards request only their top scores. All campus art and game icons are code-drawn; the candidate photo is supplied by Ahmed. Playable locally without Firebase; shared scores, challenges, totals and admin require Firebase.
 
 ## Local setup
 

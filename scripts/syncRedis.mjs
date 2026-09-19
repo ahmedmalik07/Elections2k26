@@ -54,6 +54,9 @@ for (const mode of ["dash", "easy", "chai", "memory", "classic"]) {
   try {
     const rows = await buildBoard(store, false, mode);
     await redisReplaceBoard(mode, rows);
+    // Keep the Firestore fallback equal to Redis, including players outside
+    // the compact homepage top 10.
+    await store.doc(`boards/${mode}`).set({ at: Date.now(), rows });
     const back = (await redisBoard(mode, 5)) || [];
     console.log(
       `${mode.padEnd(8)} ${String(rows.length).padStart(3)} players` +

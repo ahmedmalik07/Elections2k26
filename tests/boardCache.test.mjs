@@ -65,7 +65,7 @@ test("a board is built once, then served from the snapshot and memory", async ()
   const now = 1_000_000;
 
   const first = await cache.get(store, "dash", false, "dash", now);
-  assert.equal(first.rows.length, 50);
+  assert.equal(first.rows.length, Math.min(60, BOARD_LIMIT));
   assert.equal(first.rows[0].nickname, "Player 0");
   // One snapshot read that finds nothing, then one scan of the players.
   const buildCost = store.reads;
@@ -133,7 +133,7 @@ test("scores stay on screen when Firestore refuses reads", async () => {
   const cold = createBoardCache();
   store.fail = false;
   const fromDoc = await cold.get(store, "dash", false, "dash", now + 10);
-  assert.equal(fromDoc.rows.length, 50);
+  assert.equal(fromDoc.rows.length, Math.min(60, BOARD_LIMIT));
 });
 
 test("a board with nothing to fall back on reports the failure", async () => {
