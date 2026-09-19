@@ -384,6 +384,9 @@ export default function CampusRunner() {
       writeJson("jaago-player", player);
       setSheet(false);
       await submit();
+      // Someone who picked a nickname in order to recover an old score should
+      // not have to find the button again afterwards.
+      if (orphanBest > 0 && recovery === "idle") await recoverDeviceBest();
     } catch (err) {
       setSheetError((err as Error).message);
     } finally {
