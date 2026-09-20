@@ -471,6 +471,13 @@ export default function CampusApp({
       !confirm("Delete this score and recalculate totals?")
     )
       return;
+    // Putting an unverified score on a board that decides a prize deserves one
+    // deliberate confirmation, the same as deleting one.
+    if (
+      action === "approveClaim" &&
+      !confirm("Put this recovered score on the live leaderboard?")
+    )
+      return;
     try {
       await api("admin", { action, id, nickname }, adminKey);
       await adminLoad();
@@ -1001,6 +1008,64 @@ export default function CampusApp({
                   </p>
                 ))}
               </div>
+              {/* Scores a player recovered from their own device. These have no
+                  signed run behind them, so they wait here for a decision. */}
+              <h2 className="admin-heading">
+                Recovered scores waiting ({(admin.claims || []).length})
+              </h2>
+              {(admin.claims || []).length === 0 ? (
+                <p className="admin-empty">
+                  Nothing waiting. Scores a player recovers from their phone
+                  appear here before they reach the leaderboard.
+                </p>
+              ) : (
+                (admin.claims || []).map((c: any) => (
+                  <div className="admin-row claim" key={c.id}>
+                    <p>
+                      <b>{c.nickname}</b> · {c.department}
+                      <br />
+                      Claims <b>{Number(c.score).toLocaleString()}</b> in{" "}
+                      {c.mode} · on the board now:{" "}
+                      {Number(c.onBoard || 0).toLocaleString()}
+                      <br />
+                      <small>
+                        sent {new Date(c.createdAt).toLocaleString()}
+                      </small>
+                    </p>
+                    <button onClick={() => adminAction("approveClaim", c.id)}>
+                      Approve
+                    </button>
+                    <button onClick={() => adminAction("rejectClaim", c.id)}>
+                      Reject
+                    </button>
+                  </div>
+                ))
+              )}
+              {(admin.log || []).length > 0 && (
+                <>
+                  <h2 className="admin-heading">Admin actions taken</h2>
+                  <p className="admin-empty">
+                    Every approval, ban, rename and deletion. An entry you do
+                    not recognise means the admin key has been shared.
+                  </p>
+                  <ul className="admin-log">
+                    {(admin.log || []).map((l: any) => (
+                      <li key={l.id}>
+                        <b>{l.action}</b>
+                        {l.nickname ? ` · ${l.nickname}` : ""}
+                        {l.score
+                          ? ` · ${Number(l.score).toLocaleString()}`
+                          : ""}
+                        {" · "}
+                        {new Date(l.at).toLocaleString()}
+                        {" · from "}
+                        {l.from}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              <h2 className="admin-heading">Recent saved runs</h2>
               {admin.scores.map((s: any) => (
                 <div className="admin-row" key={s.id}>
                   <p>

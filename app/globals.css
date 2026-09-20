@@ -771,6 +771,21 @@ select {
   gap: 20px;
   flex-wrap: wrap;
 }
+.admin-heading {
+  margin: 32px 0 8px;
+  font-size: 20px;
+}
+.admin-empty {
+  opacity: 0.7;
+}
+/* A score recovered from a player's device, awaiting a decision. */
+.admin-row.claim {
+  padding: 16px;
+  margin: 12px 0;
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  background: #fff6d8;
+}
 @keyframes pulse {
   to {
     opacity: 0.5;
@@ -965,4 +980,11 @@ select {
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+}
+.admin-log {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }

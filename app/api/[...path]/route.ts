@@ -563,7 +563,7 @@ async function handle(
         });
       }
       if (req.method === "GET") {
-        const [stats, scores, claims] = await Promise.all([
+        const [stats, scores, claims, log] = await Promise.all([
           store.doc("stats/global").get(),
           store
             .collection("scores")
@@ -571,15 +571,37 @@ async function handle(
             .limit(30)
             .get(),
           store.collection("claims").where("status", "==", "pending").get(),
+          store.collection("adminLog").orderBy("at", "desc").limit(20).get(),
         ]);
         return NextResponse.json({
           stats: stats.data(),
           scores: scores.docs.map((d) => ({ id: d.id, ...d.data() })),
           claims: claims.docs.map((d) => ({ id: d.id, ...d.data() })),
+          log: log.docs.map((d) => ({ id: d.id, ...d.data() })),
         });
       }
       if (typeof b.id !== "string" || !/^[\w-]{1,100}$/.test(b.id))
         throw Error("Invalid record.");
+      // Every admin action is recorded. This board decides a prize, so if a
+      // score is approved or removed there must be a record of who did it and
+      // when -- and an entry from an address that is not yours is the only
+      // way you would ever learn the key had leaked.
+      const logAction = (outcome: string, extra: object = {}) =>
+        store
+          .collection("adminLog")
+          .doc()
+          .set({
+            action: b.action,
+            target: b.id,
+            outcome,
+            at: Date.now(),
+            from:
+              req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+              "unknown",
+            agent: (req.headers.get("user-agent") || "").slice(0, 200),
+            ...extra,
+          })
+          .catch(() => null);
       // Approving a recovered device score is the one way a score reaches the
       // board without a signed run, so it is deliberately a manual decision.
       if (b.action === "approveClaim" || b.action === "rejectClaim") {
@@ -588,6 +610,10 @@ async function handle(
         if (!claim) throw Error("Claim not found.");
         if (b.action === "rejectClaim") {
           await ref.set({ ...claim, status: "rejected", closedAt: Date.now() });
+          await logAction("rejected", {
+            nickname: claim.nickname,
+            score: claim.score,
+          });
           return NextResponse.json({ ok: true, rejected: true });
         }
         const mode = claim.mode || "dash";
@@ -623,6 +649,11 @@ async function handle(
         });
         if (redisReady()) await redisSaveScore(mode, row).catch(() => null);
         await forgetBoards(store);
+        await logAction("approved", {
+          nickname: row.nickname,
+          score: claim.score,
+          newBest: row.bestScore,
+        });
         return NextResponse.json({ ok: true, approved: true, row });
       }
       if (b.action === "ban") {
@@ -682,6 +713,7 @@ async function handle(
         });
         await forgetBoards(store);
       } else throw Error("Unknown action.");
+      await logAction("done");
       return NextResponse.json({ ok: true });
     }
     return NextResponse.json({ error: "Route nahi mila." }, { status: 404 });
